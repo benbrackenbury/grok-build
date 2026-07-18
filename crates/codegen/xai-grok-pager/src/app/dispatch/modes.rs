@@ -195,6 +195,126 @@ fn plan_mode_toast(kind: crate::app::actions::PlanModeKind) -> String {
     save_success_toast("Plan mode", kind.to_bool())
 }
 
+/// Enter debug mode via `/debug-mode` (optionally with a bug description).
+pub(super) fn dispatch_enter_debug_mode(
+    app: &mut AppView,
+    description: Option<String>,
+) -> Vec<Effect> {
+    let ActiveView::Agent(id) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get_mut(&id) else {
+        return vec![];
+    };
+
+    let in_debug = agent
+        .debug_mode_pending
+        .unwrap_or(agent.debug_mode_active);
+    if in_debug {
+        app.show_toast("Already in debug mode.");
+        return vec![];
+    }
+
+    let Some(session_id) = agent.session.session_id.clone() else {
+        agent.show_toast("No active session");
+        return vec![];
+    };
+
+    // Leaving plan optimistically when entering debug.
+    agent.plan_mode_pending = Some(false);
+    agent.debug_mode_pending = Some(true);
+    tracing::info!("Debug mode entered via /debug-mode slash command");
+
+    let mode_id = acp::SessionModeId::new(xai_grok_tools::types::SessionMode::Debug.as_id());
+
+    if let Some(desc) = description {
+        let skill_token_ranges = agent
+            .prompt
+            .slash_controller
+            .recognized_token_ranges(&desc, &agent.session.models);
+        agent
+            .session
+            .enqueue_prompt_with_skill_tokens(desc, skill_token_ranges);
+        let drain = maybe_drain_queue(agent);
+        note_peek_page_flip_after_drain(app, id);
+        let mut effects = Vec::with_capacity(1);
+        for eff in drain {
+            match eff {
+                Effect::SendPrompt {
+                    agent_id,
+                    text,
+                    prompt_id,
+                    skill_token_ranges,
+                    ..
+                } => {
+                    effects.push(Effect::SetModeThenPrompt {
+                        session_id: session_id.clone(),
+                        mode_id: mode_id.clone(),
+                        agent_id,
+                        text,
+                        prompt_id,
+                        skill_token_ranges,
+                    });
+                }
+                other => effects.push(other),
+            }
+        }
+        if effects.is_empty() {
+            effects.push(Effect::SetSessionMode {
+                session_id,
+                mode_id,
+            });
+        }
+        effects
+    } else {
+        vec![Effect::SetSessionMode {
+            session_id,
+            mode_id,
+        }]
+    }
+}
+
+/// Set debug mode on/off (ACP-mediated, per-session).
+pub(super) fn set_debug_mode(app: &mut AppView, new: bool) -> Vec<Effect> {
+    let ActiveView::Agent(id) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get_mut(&id) else {
+        return vec![];
+    };
+
+    let Some(session_id) = agent.session.session_id.clone() else {
+        agent.show_toast("No active session");
+        return vec![];
+    };
+
+    let prev = agent
+        .debug_mode_pending
+        .unwrap_or(agent.debug_mode_active);
+    if prev == new {
+        app.show_toast(&save_success_toast("Debug mode", new));
+        return vec![];
+    }
+
+    if new {
+        agent.plan_mode_pending = Some(false);
+    }
+    agent.debug_mode_pending = Some(new);
+    app.show_toast(&save_success_toast("Debug mode", new));
+    tracing::info!(target: "settings", key = "debug_mode", value = new, "setting changed");
+
+    let mode_id = acp::SessionModeId::new(if new {
+        xai_grok_tools::types::SessionMode::Debug.as_id()
+    } else {
+        xai_grok_tools::types::SessionMode::Default.as_id()
+    });
+
+    vec![Effect::SetSessionMode {
+        session_id,
+        mode_id,
+    }]
+}
+
 /// The single gate for client paths that ENABLE always-approve: `Some(reason)`
 /// iff `enabling` and the pin (`app.yolo_policy_block`) is set. Every enabling
 /// path routes through here (or [`refuse_if_yolo_locked`]) so new paths stay
@@ -624,11 +744,11 @@ pub(super) fn active_agent_plan_nudge_state(app: &AppView) -> (bool, bool) {
     }
 }
 
-/// Cycle session mode: Normal → Plan → Always-Approve → Normal.
+/// Cycle session mode: Normal → Plan → Debug → Auto → Always-Approve → Normal.
 ///
-/// Uses `plan_mode_pending` (optimistic) when available, falling back to
-/// `plan_mode_active` (confirmed by ACP). This prevents double-sends when
-/// the user presses Shift+Tab faster than the ACP round-trip.
+/// Uses `plan_mode_pending` / `debug_mode_pending` (optimistic) when available,
+/// falling back to confirmed ACP state. This prevents double-sends when the
+/// user presses Shift+Tab faster than the ACP round-trip.
 fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
@@ -653,35 +773,43 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
         // fresh tab): cycle the mode locally and stash the ACP push in
         // `deferred_session_mode` — consumed by the `SessionCreated`
         // handlers, same mechanism as the dashboard's staged plan mode.
-        // Cycle: Normal → Plan → Auto → Always-Approve → Normal (Auto skipped
-        // when always-approve is the only remaining arm under a yolo pin).
+        // Cycle: Normal → Plan → Debug → Auto → Always-Approve → Normal.
         // Each arm yields the canonical permission mode to persist (`None`
         // when it is untouched, i.e. Normal → Plan); see the push below.
         let in_plan = agent.plan_mode_pending.unwrap_or(agent.plan_mode_active);
+        let in_debug = agent
+            .debug_mode_pending
+            .unwrap_or(agent.debug_mode_active);
         let in_yolo = agent.session.is_yolo();
-        let persist_canonical: Option<&'static str> = match (in_plan, in_auto, in_yolo) {
+        let persist_canonical: Option<&'static str> = match (in_plan, in_debug, in_auto, in_yolo) {
             // Normal → Plan
-            (false, false, false) => {
+            (false, false, false, false) => {
                 agent.plan_mode_pending = Some(true);
+                agent.debug_mode_pending = Some(false);
                 agent.deferred_session_mode = Some(xai_grok_tools::types::SessionMode::Plan);
                 agent.show_mode_switch_banner("Plan");
                 tracing::info!("Mode cycle (pre-session): Normal → Plan");
                 None
             }
-            // Plan → Auto (or Plan → Always-Approve when the auto feature is
-            // gated off, matching the legacy Normal→Plan→Always-Approve cycle).
-            (true, false, false) => {
+            // Plan → Debug
+            (true, false, false, false) => {
                 agent.plan_mode_pending = Some(false);
+                agent.debug_mode_pending = Some(true);
+                agent.deferred_session_mode = Some(xai_grok_tools::types::SessionMode::Debug);
+                agent.show_mode_switch_banner("Debug");
+                tracing::info!("Mode cycle (pre-session): Plan → Debug");
+                None
+            }
+            // Debug → Auto (or Always-Approve / Normal when auto gated)
+            (false, true, false, false) => {
+                agent.debug_mode_pending = Some(false);
                 agent.deferred_session_mode = None;
                 if auto_gate {
-                    // Clear any launch-seeded yolo so the created session isn't
-                    // started in yolo while the UI shows Auto (SessionFlags reads
-                    // default_yolo at CreateSession).
                     agent.session.yolo_mode = false;
                     app.default_yolo = false;
                     app.current_ui.permission_mode = Some("auto".into());
                     agent.show_mode_switch_banner("Auto");
-                    tracing::info!("Mode cycle (pre-session): Plan → Auto");
+                    tracing::info!("Mode cycle (pre-session): Debug → Auto");
                     Some("auto")
                 } else if let Some(warning) = yolo_locked {
                     app.current_ui.permission_mode = Some("ask".into());
@@ -689,19 +817,19 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                     app.default_yolo = false;
                     agent.show_toast(warning);
                     agent.show_mode_switch_banner("Normal");
-                    tracing::info!("Mode cycle (pre-session): Plan → Normal (auto gated, policy)");
+                    tracing::info!("Mode cycle (pre-session): Debug → Normal (auto gated, policy)");
                     Some("ask")
                 } else {
                     agent.session.yolo_mode = true;
                     app.default_yolo = true;
                     app.current_ui.permission_mode = Some("always-approve".into());
                     agent.show_mode_switch_banner("Always-Approve");
-                    tracing::info!("Mode cycle (pre-session): Plan → Always-Approve (auto gated)");
+                    tracing::info!("Mode cycle (pre-session): Debug → Always-Approve (auto gated)");
                     Some("always-approve")
                 }
             }
             // Auto → Always-Approve (or Normal if pinned)
-            (false, true, false) => {
+            (false, false, true, false) => {
                 if let Some(warning) = yolo_locked {
                     app.current_ui.permission_mode = Some("ask".into());
                     agent.session.yolo_mode = false;
@@ -720,7 +848,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                 }
             }
             // Always-Approve → Normal
-            (false, _, true) => {
+            (false, false, _, true) => {
                 agent.session.yolo_mode = false;
                 app.default_yolo = false;
                 app.current_ui.permission_mode = Some("ask".into());
@@ -728,25 +856,22 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                 tracing::info!("Mode cycle (pre-session): Always-Approve → Normal");
                 Some("ask")
             }
-            // Plan + Auto → Auto (exit plan, keep the classifier), matching the
-            // with-session `(true, true, false, …)` arm. Every other plan+weird
-            // state (notably Plan+yolo) resets to Normal, matching the
-            // with-session catch-all — both paths MUST agree on the same input.
-            // Clear stale yolo so enforcement matches the displayed mode.
-            (true, _, _) => {
+            // Plan/Debug + weird state → Normal (or keep Auto under plan+auto)
+            (true, _, _, _) | (false, true, _, _) => {
                 agent.plan_mode_pending = Some(false);
+                agent.debug_mode_pending = Some(false);
                 agent.deferred_session_mode = None;
                 agent.session.yolo_mode = false;
                 app.default_yolo = false;
                 if auto_gate && in_auto && !in_yolo {
                     app.current_ui.permission_mode = Some("auto".into());
                     agent.show_mode_switch_banner("Auto");
-                    tracing::info!("Mode cycle (pre-session): Plan+Auto → Auto");
+                    tracing::info!("Mode cycle (pre-session): Plan/Debug+Auto → Auto");
                     Some("auto")
                 } else {
                     app.current_ui.permission_mode = Some("ask".into());
                     agent.show_mode_switch_banner("Normal");
-                    tracing::info!("Mode cycle (pre-session): Plan(*) → Normal");
+                    tracing::info!("Mode cycle (pre-session): Plan/Debug(*) → Normal");
                     Some("ask")
                 }
             }
@@ -770,14 +895,18 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
         return effects;
     };
 
-    // Effective plan state: prefer optimistic pending over confirmed active.
+    // Effective mode state: prefer optimistic pending over confirmed active.
     let in_plan = agent.plan_mode_pending.unwrap_or(agent.plan_mode_active);
+    let in_debug = agent
+        .debug_mode_pending
+        .unwrap_or(agent.debug_mode_active);
     let in_yolo = agent.session.is_yolo();
 
-    match (in_plan, in_auto, in_yolo) {
+    match (in_plan, in_debug, in_auto, in_yolo) {
         // Normal → Plan
-        (false, false, false) => {
+        (false, false, false, false) => {
             agent.plan_mode_pending = Some(true);
+            agent.debug_mode_pending = Some(false);
             agent.show_mode_switch_banner("Plan");
             refresh_open_settings_modals(app);
             tracing::info!("Mode cycle: Normal → Plan");
@@ -786,11 +915,22 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                 mode_id: acp::SessionModeId::new(xai_grok_tools::types::SessionMode::Plan.as_id()),
             }]
         }
-        // Plan → Auto (classifier mode; exit plan, not always-approve).
-        // When the auto feature is gated off, Plan → Always-Approve (skip Auto),
-        // matching the legacy cycle and respecting the yolo policy pin.
-        (true, false, false) => {
+        // Plan → Debug
+        (true, false, false, false) => {
             agent.plan_mode_pending = Some(false);
+            agent.debug_mode_pending = Some(true);
+            agent.show_mode_switch_banner("Debug");
+            refresh_open_settings_modals(app);
+            tracing::info!("Mode cycle: Plan → Debug");
+            vec![Effect::SetSessionMode {
+                session_id,
+                mode_id: acp::SessionModeId::new(xai_grok_tools::types::SessionMode::Debug.as_id()),
+            }]
+        }
+        // Debug → Auto (classifier; exit debug). When auto is gated off,
+        // Debug → Always-Approve (or Normal under yolo policy pin).
+        (false, true, false, false) => {
+            agent.debug_mode_pending = Some(false);
             if !auto_gate {
                 if let Some(warning) = yolo_locked {
                     set_yolo_mode_inner(app, false);
@@ -801,9 +941,8 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                         a.show_mode_switch_banner("Normal");
                     }
                     tracing::info!(
-                        "Mode cycle: Plan → Normal (auto gated, always-approve blocked by policy)"
+                        "Mode cycle: Debug → Normal (auto gated, always-approve blocked by policy)"
                     );
-                    // Exit Plan on the agent too; a policy pin must not strand the session in Plan.
                     return vec![
                         Effect::SetSessionMode {
                             session_id: session_id.clone(),
@@ -824,7 +963,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
                 if let Some(a) = app.agents.get_mut(&id) {
                     a.show_mode_switch_banner("Always-Approve");
                 }
-                tracing::info!("Mode cycle: Plan → Always-Approve (auto gated)");
+                tracing::info!("Mode cycle: Debug → Always-Approve (auto gated)");
                 return vec![
                     Effect::SetSessionMode {
                         session_id: session_id.clone(),
@@ -845,7 +984,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
             if let Some(a) = app.agents.get_mut(&id) {
                 a.show_mode_switch_banner("Auto");
             }
-            tracing::info!("Mode cycle: Plan → Auto");
+            tracing::info!("Mode cycle: Debug → Auto");
             vec![
                 Effect::SetSessionMode {
                     session_id: session_id.clone(),
@@ -861,7 +1000,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
             ]
         }
         // Auto → Always-Approve (or Normal when policy pins yolo off)
-        (false, true, false) => {
+        (false, false, true, false) => {
             if let Some(warning) = yolo_locked {
                 set_yolo_mode_inner(app, false);
                 app.current_ui.permission_mode = Some("ask".into());
@@ -891,7 +1030,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
             }]
         }
         // Always-Approve → Normal
-        (false, _, true) => {
+        (false, false, _, true) => {
             set_yolo_mode_inner(app, false);
             app.current_ui.permission_mode = Some("ask".into());
             refresh_open_settings_modals(app);
@@ -906,16 +1045,16 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
             }]
         }
 
-        // Plan + Auto → Auto: exit plan but keep the classifier. Without this
-        // explicit arm the state falls to `_` and would reset to Normal/ask.
-        (true, true, false) => {
+        // Plan/Debug + Auto → Auto: exit special mode but keep the classifier.
+        (true, false, true, false) | (false, true, true, false) => {
             agent.plan_mode_pending = Some(false);
+            agent.debug_mode_pending = Some(false);
             app.current_ui.permission_mode = Some("auto".into());
             refresh_open_settings_modals(app);
             if let Some(a) = app.agents.get_mut(&id) {
                 a.show_mode_switch_banner("Auto");
             }
-            tracing::info!("Mode cycle: Plan+Auto → Auto (exit plan, keep classifier)");
+            tracing::info!("Mode cycle: Plan/Debug+Auto → Auto (exit special mode, keep classifier)");
             vec![
                 Effect::SetSessionMode {
                     session_id: session_id.clone(),
@@ -936,6 +1075,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
         // spurious telemetry).
         _ => {
             agent.plan_mode_pending = Some(false);
+            agent.debug_mode_pending = Some(false);
             // NLL releases the `agent` borrow after the assignment
             // above; `set_yolo_mode_inner(app, …)` can reborrow below.
             if in_yolo {
@@ -948,7 +1088,7 @@ fn dispatch_cycle_mode_inner(app: &mut AppView) -> Vec<Effect> {
             }
             tracing::info!("Mode cycle: mixed state → Normal");
             let mut effects = vec![];
-            if in_plan {
+            if in_plan || in_debug {
                 effects.push(Effect::SetSessionMode {
                     session_id: session_id.clone(),
                     mode_id: acp::SessionModeId::new(

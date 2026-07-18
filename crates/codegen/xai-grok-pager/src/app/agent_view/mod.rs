@@ -141,6 +141,7 @@ use crate::views::extensions_modal::ExtensionsModalState;
 use crate::views::file_search::line_viewer::LineViewerState;
 use crate::views::modal::{self, ActiveModal, ModalButtonHit};
 use crate::views::permission_view::{PermissionViewState, SubagentInfo};
+use crate::views::debug_hitl_view::DebugHitlViewState;
 use crate::views::plan_approval_view::{PlanApprovalViewState, PlanComment};
 use crate::views::prompt_widget::{PromptWidget, StashedPrompt};
 use crate::views::question_view::QuestionViewState;
@@ -1275,6 +1276,10 @@ pub struct AgentView {
     /// The cycle logic uses `plan_mode_pending.unwrap_or(plan_mode_active)`
     /// so rapid Shift+Tab presses advance correctly without waiting for ACP.
     pub(crate) plan_mode_pending: Option<bool>,
+    /// Whether debug mode is currently active (confirmed by ACP).
+    pub(crate) debug_mode_active: bool,
+    /// Optimistic debug-mode state set immediately on `/debug-mode`.
+    pub(crate) debug_mode_pending: Option<bool>,
     /// Session mode to apply once this agent's ACP session exists. Set when
     /// the agent is spawned from the dashboard with `/plan` active (the
     /// session does not exist yet, so the mode can't be sent immediately).
@@ -1315,6 +1320,8 @@ pub struct AgentView {
     /// Active plan approval view (from `exit_plan_mode` ext_method). When `Some`,
     /// the prompt area shows the plan approval overlay and input is modal.
     pub(crate) plan_approval_view: Option<PlanApprovalViewState>,
+    /// Debug mode HITL (Proceed / Mark Fixed) parked reverse-request.
+    pub(crate) debug_hitl_view: Option<DebugHitlViewState>,
     pub(crate) latest_inline_plan_content: Option<String>,
     pub(crate) plan_comments: Vec<PlanComment>,
     /// Monotonic counter for casual plan comment IDs.

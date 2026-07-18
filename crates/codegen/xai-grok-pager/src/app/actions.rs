@@ -694,6 +694,13 @@ pub enum Action {
     /// to config.toml). `/plan <desc>` uses `EnterPlanMode` instead
     /// because it also starts a turn.
     SetPlanMode(PlanModeKind),
+    /// Enter debug mode. If a description is provided, also start a turn
+    /// with that text as the prompt (`/debug-mode <bug>`).
+    EnterDebugMode {
+        description: Option<String>,
+    },
+    /// Set debug mode on/off. Per-session, ACP-mediated.
+    SetDebugMode(bool),
     /// Enter feedback mode (visual prompt change, not a send).
     EnterFeedbackMode,
     /// Send feedback text collected in feedback mode.
