@@ -2,6 +2,7 @@
 //!
 //! Toggles between available themes or switches to a named theme.
 //! Selecting `auto` enables system-appearance-driven theme switching.
+//! Selecting `system` applies the terminal-native transparent palette.
 //! Selecting an explicit theme disengages auto mode.
 //!
 //! `run` dispatches `Action::SetTheme(<canonical>)` — the dispatcher
@@ -81,27 +82,34 @@ impl SlashCommand for ThemeCommand {
         let is_auto = theme_cache::is_auto_mode();
         let available = ThemeKind::available();
 
-        // Prepend "auto" (follow system appearance) as the first option.
+        // Prepend "auto" (follow OS appearance) as the first option.
         let auto_active = if is_auto { " (active)" } else { "" };
         let mut items = vec![ArgItem {
             display: "auto".to_string(),
             match_text: "auto".to_string(),
             insert_text: "auto".to_string(),
-            description: format!("auto (follow system){auto_active}"),
+            description: format!("auto (follow OS appearance){auto_active}"),
         }];
 
         // Concrete themes — only show "(active)" when not in auto mode.
+        // Surface a clearer description for `system` (terminal-native).
         items.extend(available.iter().map(|kind| {
             let active = if *kind == current && !is_auto {
                 " (active)"
             } else {
                 ""
             };
+            let name = kind.display_name();
+            let description = if matches!(kind, ThemeKind::System) {
+                format!("system (terminal colors){active}")
+            } else {
+                format!("{name}{active}")
+            };
             ArgItem {
-                display: kind.display_name().to_string(),
-                match_text: kind.display_name().to_string(),
-                insert_text: kind.display_name().to_string(),
-                description: format!("{}{active}", kind.display_name()),
+                display: name.to_string(),
+                match_text: name.to_string(),
+                insert_text: name.to_string(),
+                description,
             }
         }));
 
@@ -185,9 +193,19 @@ mod tests {
             };
             let items = cmd.suggest_args(&ctx, "").expect("should return items");
             assert_eq!(items[0].insert_text, "auto");
-            assert!(items[0].description.contains("follow system"));
+            assert!(items[0].description.contains("follow OS appearance"));
             // auto + all available concrete themes
             assert_eq!(items.len(), ThemeKind::available().len() + 1);
+            // system theme is listed with a terminal-native description
+            let system = items
+                .iter()
+                .find(|i| i.insert_text == "system")
+                .expect("system should be in list");
+            assert!(
+                system.description.contains("terminal colors"),
+                "system description should mention terminal colors, got: {}",
+                system.description
+            );
         });
     }
 
@@ -393,6 +411,39 @@ mod tests {
                     assert_eq!(name, "auto");
                 }
                 other => panic!("expected Action::SetTheme(\"auto\"), got {other:?}"),
+            }
+        });
+    }
+
+    /// `/theme system` (and aliases) dispatches the terminal-native theme.
+    #[test]
+    fn run_system_dispatches_set_theme_system() {
+        with_test_env(|| {
+            let cmd = ThemeCommand;
+            let models = crate::acp::model_state::ModelState::default();
+            let bundle = crate::app::bundle::BundleState::default();
+            let mut ctx = CommandExecCtx {
+                models: &models,
+                session_id: None,
+                bundle_state: &bundle,
+                screen_mode: crate::app::ScreenMode::Inline,
+                pager_state: crate::settings::PagerLocalSnapshot {
+                    multiline_mode: false,
+                    yolo_mode: false,
+                    ..crate::settings::PagerLocalSnapshot::default()
+                },
+            };
+            for alias in ["system", "terminal", "transparent"] {
+                let result = cmd.run(&mut ctx, alias);
+                match result {
+                    CommandResult::Action(Action::SetTheme(name)) => {
+                        assert_eq!(
+                            name, "system",
+                            "alias `{alias}` must normalise to system"
+                        );
+                    }
+                    other => panic!("expected Action::SetTheme(\"system\") for `{alias}`, got {other:?}"),
+                }
             }
         });
     }

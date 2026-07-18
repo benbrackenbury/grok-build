@@ -148,6 +148,9 @@ pub fn get_syntect() -> &'static Syntect {
         ThemeKind::GrokNight
         | ThemeKind::RosePineMoon
         | ThemeKind::OscuraMidnight
+        // System is polarity-agnostic (Reset + ANSI); use the dark
+        // syntect theme as a neutral default for code blocks.
+        | ThemeKind::System
         | ThemeKind::Auto => SYNTECT_GROKNIGHT
             .get_or_init(|| Syntect::new(include_bytes!("../assets/grok-night.tmTheme"))),
         ThemeKind::TokyoNight => SYNTECT_TOKYONIGHT
