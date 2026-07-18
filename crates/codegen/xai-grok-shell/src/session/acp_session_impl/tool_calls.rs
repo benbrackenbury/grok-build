@@ -1196,6 +1196,158 @@ impl SessionActor {
                 Decision::Allow | Decision::Ask => {}
             }
         }
+        // Debug-mode HITL parks (Proceed / Mark Fixed) — block until the client answers.
+        if matches!(
+            &tool_input,
+            ToolInput::AwaitDebugReproduction(_) | ToolInput::AwaitDebugVerification(_)
+        ) {
+            let (method, ext_req_json, kind, banner) = match &tool_input {
+                ToolInput::AwaitDebugReproduction(input) => {
+                    let run_id = input
+                        .run_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("run1");
+                    let log_path = self
+                        .debug_mode
+                        .lock()
+                        .debug_log_path()
+                        .display()
+                        .to_string();
+                    let req = xai_grok_tools::implementations::grok_build::await_debug_reproduction::types::AwaitDebugReproductionExtRequest {
+                        session_id: self.session_id_string(),
+                        tool_call_id: tool_call_id.to_string(),
+                        steps: input.steps.clone(),
+                        run_id: run_id.to_owned(),
+                        log_path,
+                    };
+                    self.debug_mode.lock().set_awaiting_reproduction(true);
+                    self.persist_debug_mode_state();
+                    (
+                        "x.ai/await_debug_reproduction",
+                        serde_json::value::to_raw_value(&req)
+                            .expect("AwaitDebugReproductionExtRequest serialize"),
+                        crate::session::pending_interaction::PendingKind::DebugReproduction,
+                        "Debug: reproduce the bug, then Proceed",
+                    )
+                }
+                ToolInput::AwaitDebugVerification(input) => {
+                    let run_id = input
+                        .run_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("post-fix");
+                    let log_path = self
+                        .debug_mode
+                        .lock()
+                        .debug_log_path()
+                        .display()
+                        .to_string();
+                    let req = xai_grok_tools::implementations::grok_build::await_debug_verification::types::AwaitDebugVerificationExtRequest {
+                        session_id: self.session_id_string(),
+                        tool_call_id: tool_call_id.to_string(),
+                        summary: input.summary.clone(),
+                        run_id: run_id.to_owned(),
+                        log_path,
+                    };
+                    self.debug_mode.lock().set_awaiting_verification(true);
+                    self.persist_debug_mode_state();
+                    (
+                        "x.ai/await_debug_verification",
+                        serde_json::value::to_raw_value(&req)
+                            .expect("AwaitDebugVerificationExtRequest serialize"),
+                        crate::session::pending_interaction::PendingKind::DebugVerification,
+                        "Debug: verify the fix, then Mark Fixed or Still broken",
+                    )
+                }
+                _ => unreachable!(),
+            };
+
+            self.dispatch_notification_hook(
+                "permission_prompt",
+                Some(banner.into()),
+                None,
+                Some("info".into()),
+            )
+            .await;
+
+            let ext_request = acp::ExtRequest::new(method, ext_req_json.into());
+            let resp = {
+                let _pending_guard =
+                    crate::session::pending_interaction::PendingInteractionGuard::new(
+                        self.pending_interactions.clone(),
+                        self.notifications.gateway.clone(),
+                        self.session_info.id.clone(),
+                        tool_call_id.to_string(),
+                        kind,
+                    );
+                use agent_client_protocol::Client as _;
+                self.notifications.gateway.ext_method(ext_request).await
+            };
+
+            let message = match resp {
+                Ok(raw) => {
+                    self.apply_debug_hitl_response(&tool_input, raw.0.get())
+                }
+                Err(err) if ext_method_no_client(&err) => {
+                    // Headless / no client: fall through to the tool itself.
+                    tracing::debug!(%err, "debug HITL: no client; running tool body");
+                    // Clear awaiting flags so we don't stick in HITL.
+                    self.debug_mode.lock().set_awaiting_reproduction(false);
+                    self.debug_mode.lock().set_awaiting_verification(false);
+                    self.persist_debug_mode_state();
+                    // Don't intercept — let the tool run normally below by
+                    // skipping this block via fallthrough is hard; return a
+                    // synthetic "proceed" so the model can continue offline.
+                    match &tool_input {
+                        ToolInput::AwaitDebugReproduction(input) => {
+                            let run_id = input.run_id.as_deref().unwrap_or("run1");
+                            format!(
+                                "No interactive client available. Treat reproduction as completed \
+                                 (runId={run_id}). Analyze the debug log, then continue."
+                            )
+                        }
+                        ToolInput::AwaitDebugVerification(input) => {
+                            let run_id = input.run_id.as_deref().unwrap_or("post-fix");
+                            format!(
+                                "No interactive client available. Assume verification is still pending \
+                                 (runId={run_id}). Ask the user in chat whether the fix worked."
+                            )
+                        }
+                        _ => "Debug HITL skipped (no client).".into(),
+                    }
+                }
+                Err(err) => {
+                    tracing::info!(%err, "debug HITL: client disconnected");
+                    self.debug_mode.lock().set_awaiting_reproduction(false);
+                    self.debug_mode.lock().set_awaiting_verification(false);
+                    self.persist_debug_mode_state();
+                    let message = "Debug interaction could not be completed because the client \
+                         disconnected. Debug mode remains active."
+                        .to_string();
+                    self.handle_tool_not_executed(&call.id, &tool_call_id, message)
+                        .await?;
+                    return Ok(Err(ToolLoop::Cancelled));
+                }
+            };
+
+            let tool_update = acp::ToolCallUpdate::new(
+                tool_call_id.clone(),
+                acp::ToolCallUpdateFields::new()
+                    .status(Some(acp::ToolCallStatus::Completed))
+                    .content(Some(vec![acp::ToolCallContent::from(
+                        acp::ContentBlock::Text(acp::TextContent::new(message.clone())),
+                    )])),
+            );
+            self.send_update(acp::SessionUpdate::ToolCallUpdate(tool_update), None)
+                .await;
+            let tool_chat = ConversationItem::tool_result(call.id.clone(), message);
+            self.chat_state_handle.push_tool_result(tool_chat);
+            return Ok(Err(ToolLoop::Continue));
+        }
+
         let is_exit_plan_mode = matches!(&tool_input, ToolInput::ExitPlanMode(_));
         let is_cursor_switch_to_agent = false;
         let is_cursor_create_plan = false;
@@ -1334,6 +1486,11 @@ impl SessionActor {
                         | ToolKind::EnterPlan
                         | ToolKind::ExitPlan
                         | ToolKind::AskUser
+                        | ToolKind::EnterDebug
+                        | ToolKind::ExitDebug
+                        | ToolKind::DebugAwaitRepro
+                        | ToolKind::DebugAwaitVerify
+                        | ToolKind::DebugReadLogs
                 )
             })
             .unwrap_or(false);
@@ -1417,6 +1574,114 @@ impl SessionActor {
             }),
         )
     }
+    /// Map a debug HITL reverse-request response into the tool-result string
+    /// the model sees, and update debug phase flags.
+    fn apply_debug_hitl_response(&self, tool_input: &ToolInput, raw_json: &str) -> String {
+        use crate::session::debug_mode::DebugPhase;
+        match tool_input {
+            ToolInput::AwaitDebugReproduction(input) => {
+                let run_id = input
+                    .run_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("run1");
+                let log_path = self.debug_mode.lock().debug_log_path().display().to_string();
+                let outcome = serde_json::from_str::<
+                    xai_grok_tools::implementations::grok_build::await_debug_reproduction::types::AwaitDebugReproductionExtResponse,
+                >(raw_json)
+                .map(|r| r.outcome)
+                .unwrap_or_else(|_| "cancelled".into());
+                self.debug_mode.lock().set_awaiting_reproduction(false);
+                match outcome.as_str() {
+                    "proceeded" => {
+                        self.debug_mode.lock().set_phase(DebugPhase::Analyzing);
+                        self.persist_debug_mode_state();
+                        format!(
+                            "User reproduced the bug (runId={run_id}). Analyze NDJSON at {log_path} \
+                             for this runId. Classify each hypothesis CONFIRMED/REJECTED/INCONCLUSIVE, \
+                             then apply a minimal fix while keeping instrumentation. Do not ask the \
+                             user to paste logs."
+                        )
+                    }
+                    "abandoned" => {
+                        let deactivated = self.debug_mode.lock().deactivate_approved();
+                        if deactivated {
+                            self.persist_debug_mode_state();
+                            self.enqueue_current_mode_update(acp::SessionModeId::new(
+                                xai_grok_tools::types::SessionMode::Default.as_id(),
+                            ));
+                        }
+                        "The user abandoned debug mode without verifying a fix. Debug mode is off. \
+                         Agent log regions (`#region agent log`) may remain — remove them before \
+                         committing."
+                            .to_string()
+                    }
+                    _ => {
+                        self.persist_debug_mode_state();
+                        "The user cancelled the reproduction wait. Stay in debug mode and ask how \
+                         to help next (more steps, different instrumentation, or abandon)."
+                            .to_string()
+                    }
+                }
+            }
+            ToolInput::AwaitDebugVerification(input) => {
+                let run_id = input
+                    .run_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("post-fix");
+                let log_path = self.debug_mode.lock().debug_log_path().display().to_string();
+                let outcome = serde_json::from_str::<
+                    xai_grok_tools::implementations::grok_build::await_debug_verification::types::AwaitDebugVerificationExtResponse,
+                >(raw_json)
+                .map(|r| r.outcome)
+                .unwrap_or_else(|_| "cancelled".into());
+                self.debug_mode.lock().set_awaiting_verification(false);
+                match outcome.as_str() {
+                    "fixed" => {
+                        self.debug_mode.lock().set_phase(DebugPhase::CleaningUp);
+                        self.persist_debug_mode_state();
+                        format!(
+                            "User marked the bug FIXED (runId={run_id}). Remove every agent-log region \
+                             (`#region agent log` / `# region agent log`) from the codebase, leave the \
+                             real fix, then call exit_debug_mode. Optional: skim {log_path} for post-fix \
+                             confirmation, but do not leave instrumentation behind."
+                        )
+                    }
+                    "still_broken" => {
+                        self.debug_mode.lock().set_phase(DebugPhase::Exploring);
+                        self.persist_debug_mode_state();
+                        format!(
+                            "User reports the bug is STILL BROKEN (runId={run_id}). Form new or refined \
+                             hypotheses, add/adjust instrumentation, call await_debug_reproduction with a \
+                             new runId, and continue the loop. Log path: {log_path}."
+                        )
+                    }
+                    "abandoned" => {
+                        let deactivated = self.debug_mode.lock().deactivate_approved();
+                        if deactivated {
+                            self.persist_debug_mode_state();
+                            self.enqueue_current_mode_update(acp::SessionModeId::new(
+                                xai_grok_tools::types::SessionMode::Default.as_id(),
+                            ));
+                        }
+                        "The user abandoned debug mode. Debug mode is off. Agent log regions may \
+                         remain — remove them before committing."
+                            .to_string()
+                    }
+                    _ => {
+                        self.persist_debug_mode_state();
+                        "The user cancelled verification. Stay in debug mode and ask what they observed."
+                            .to_string()
+                    }
+                }
+            }
+            _ => "Unexpected debug HITL tool input.".to_string(),
+        }
+    }
+
     /// Leave plan mode (approved/abandoned) and tell the client to show the
     /// Default mode. Mirrors the mid-turn exit so the resume re-park
     /// drives the mode change through the same path.
