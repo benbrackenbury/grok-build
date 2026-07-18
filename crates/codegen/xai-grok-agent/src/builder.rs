@@ -160,6 +160,43 @@ fn ensure_plan_mode_tools(tool_config: &mut xai_grok_tools::registry::types::Too
             .push((&grok_build::AskUserQuestionTool).into());
     }
 }
+/// Ensure debug mode tools are present (TUI `/debug-mode` + Shift+Tab need them).
+fn ensure_debug_mode_tools(tool_config: &mut xai_grok_tools::registry::types::ToolServerConfig) {
+    use xai_grok_tools::implementations::grok_build;
+    let existing: std::collections::HashSet<&str> =
+        tool_config.tools.iter().map(|tc| tc.id.as_str()).collect();
+    let missing_enter = !existing.contains("GrokBuild:enter_debug_mode");
+    let missing_exit = !existing.contains("GrokBuild:exit_debug_mode");
+    let missing_repro = !existing.contains("GrokBuild:await_debug_reproduction");
+    let missing_verify = !existing.contains("GrokBuild:await_debug_verification");
+    let missing_logs = !existing.contains("GrokBuild:read_debug_logs");
+    drop(existing);
+    if missing_enter {
+        tool_config
+            .tools
+            .push((&grok_build::EnterDebugModeTool).into());
+    }
+    if missing_exit {
+        tool_config
+            .tools
+            .push((&grok_build::ExitDebugModeTool).into());
+    }
+    if missing_repro {
+        tool_config
+            .tools
+            .push((&grok_build::AwaitDebugReproductionTool).into());
+    }
+    if missing_verify {
+        tool_config
+            .tools
+            .push((&grok_build::AwaitDebugVerificationTool).into());
+    }
+    if missing_logs {
+        tool_config
+            .tools
+            .push((&grok_build::ReadDebugLogsTool).into());
+    }
+}
 /// Merge a shell-resolved params map into every matching tool's
 /// `ToolConfig.params` (single copy of the loop the per-tool injections share).
 fn merge_tool_params(
@@ -743,6 +780,7 @@ impl AgentBuilder {
                     .push((&xai_grok_tools::implementations::opencode::OpenCodeWriteTool).into());
             }
             ensure_plan_mode_tools(&mut tool_config);
+            ensure_debug_mode_tools(&mut tool_config);
         }
         if self.memory_backend.is_none() {
             let grok_build_ns = xai_grok_tools::types::tool::ToolNamespace::GrokBuild.to_string();
