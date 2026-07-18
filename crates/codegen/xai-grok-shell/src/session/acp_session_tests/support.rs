@@ -292,6 +292,11 @@ pub(crate) async fn create_test_actor_ex(
                 "/tmp/test-session",
             )),
         )),
+        debug_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
+                "/tmp/test-session",
+            )),
+        )),
         goal_enabled: false,
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
         goal_harness_availability_reconciled: std::sync::atomic::AtomicBool::new(false),

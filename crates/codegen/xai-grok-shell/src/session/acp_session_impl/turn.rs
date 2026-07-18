@@ -622,6 +622,7 @@ impl SessionActor {
         self.maybe_inject_mcp_connecting_reminder().await;
         self.maybe_inject_date_rollover_reminder().await;
         self.inject_plan_mode_reminders().await;
+        self.inject_debug_mode_reminders().await;
         self.inject_resumed_tasks_reminder();
         self.drain_between_turn_completions().await;
         let user_message = if user_images.is_empty() {
