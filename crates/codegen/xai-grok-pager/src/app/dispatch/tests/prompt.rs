@@ -2,6 +2,33 @@
 
 use super::*;
 
+/// Ctrl+G (prompt focused) arms a temp file for `$EDITOR` with the draft text.
+#[test]
+fn open_prompt_in_editor_writes_draft_and_arms_suspend() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .prompt
+        .set_text("hello from draft");
+
+    let effects = dispatch(Action::OpenPromptInEditor, &mut app);
+    assert!(effects.is_empty());
+    let path = app
+        .pending_editor_path
+        .as_ref()
+        .expect("pending_editor_path must be armed");
+    assert!(
+        app.pending_prompt_editor_reload,
+        "reload flag must be set so the event loop loads the file back"
+    );
+    let written = std::fs::read_to_string(path).expect("temp prompt file");
+    assert_eq!(written, "hello from draft");
+    // Clean up the temp file left for the (unrun) event-loop suspend path.
+    let _ = std::fs::remove_file(path);
+}
+
 /// Sending a prompt is a submit: it retires the active ephemeral tip.
 #[test]
 fn send_prompt_clears_active_ephemeral_tip() {

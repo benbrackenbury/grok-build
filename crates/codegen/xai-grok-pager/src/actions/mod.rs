@@ -91,6 +91,8 @@ pub enum ActionId {
     // Prompt
     CycleMode,
     BashMode,
+    /// Open the current prompt draft in `$VISUAL` / `$EDITOR` (Ctrl+G).
+    OpenPromptInEditor,
 
     // Scrollback (contextual)
     Rewind,
@@ -510,6 +512,26 @@ mod tests {
             .find(ActionId::InterjectPrompt)
             .expect("InterjectPrompt");
         assert!(def.alt_keys.is_empty());
+    }
+
+    #[test]
+    fn ctrl_g_prompt_focused_opens_editor_not_send_to_bg() {
+        let registry = ActionRegistry::defaults();
+        let ctrl_g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        assert_eq!(
+            registry.lookup(&ctrl_g, When::PromptFocused),
+            Some(ActionId::OpenPromptInEditor),
+            "prompt-focused Ctrl+G must open the draft in $EDITOR"
+        );
+        // Scrollback / agent-screen demote still uses the same chord.
+        assert_eq!(
+            registry.lookup(&ctrl_g, When::AgentScreen),
+            Some(ActionId::SendToBackground),
+        );
+        assert_ne!(
+            registry.lookup(&ctrl_g, When::ScrollbackFocused),
+            Some(ActionId::OpenPromptInEditor),
+        );
     }
 
     #[test]

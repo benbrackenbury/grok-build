@@ -728,12 +728,15 @@ pub struct AppView {
     /// Effects queued by notification handlers (drained by the event loop).
     pub pending_effects: Vec<crate::app::actions::Effect>,
     /// Path to open in `$EDITOR` after the current event cycle completes.
-    /// Set by `Action::SuspendForEditor`; consumed by the event loop which
-    /// leaves the alternate screen, disables raw mode, spawns the editor,
-    /// waits for it to exit, then restores the TUI.
+    /// Set by `Action::SuspendForEditor` / `Action::OpenPromptInEditor`;
+    /// consumed by the event loop which leaves the alternate screen, disables
+    /// raw mode, spawns the editor, waits for it to exit, then restores the TUI.
     pub pending_editor_path: Option<std::path::PathBuf>,
     /// After `$EDITOR` exits, refresh the agents modal tab list if still open.
     pub pending_agents_modal_refresh: Option<crate::views::agents_modal::AgentsTab>,
+    /// After `$EDITOR` exits, load `pending_editor_path` contents into the
+    /// active agent's prompt draft and delete the temp file (Ctrl+G open-prompt).
+    pub pending_prompt_editor_reload: bool,
     /// Path to open in `$PAGER` (default `less`) after the current event cycle.
     /// Set by `Action::OpenTranscriptPager` (`/transcript`); consumed by the
     /// event loop which suspends the inline TUI, spawns the pager, then restores
@@ -1221,6 +1224,7 @@ impl AppView {
             pending_effects: Vec::new(),
             pending_editor_path: None,
             pending_agents_modal_refresh: None,
+            pending_prompt_editor_reload: false,
             pending_pager_path: None,
             pending_pager_ansi: false,
             minimal_state: crate::minimal_api::MinimalState::default(),
@@ -5287,6 +5291,7 @@ pub(crate) mod tests {
             pending_effects: Vec::new(),
             pending_editor_path: None,
             pending_agents_modal_refresh: None,
+            pending_prompt_editor_reload: false,
             pending_pager_path: None,
             pending_pager_ansi: false,
             minimal_state: crate::minimal_api::MinimalState::default(),
