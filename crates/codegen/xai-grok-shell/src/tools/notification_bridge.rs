@@ -42,6 +42,8 @@ pub(crate) struct NotificationBridgeConfig {
     /// Used to transition state on `PlanModeEntered` / `PlanModeExited`
     /// tool notifications.
     pub plan_mode: Arc<parking_lot::Mutex<crate::session::plan_mode::PlanModeTracker>>,
+    /// Debug mode tracker shared with the session actor.
+    pub debug_mode: Arc<parking_lot::Mutex<crate::session::debug_mode::DebugModeTracker>>,
     /// Session-level prompt mode shared with the session actor.
     /// Updated on `PlanModeEntered` / `PlanModeExited` and `session/set_mode`
     /// so the next turn starts in the correct mode.
@@ -659,6 +661,58 @@ async fn handle_notification(
                 "Plan mode exited via ExitPlanMode tool"
             );
         }
+
+        ToolNotification::DebugModeEntered(entered) => {
+            // Mutual exclusion: leave plan if active.
+            {
+                let mut plan = config.plan_mode.lock();
+                if plan.is_active() {
+                    plan.user_exit(false);
+                    let snapshot = plan.snapshot();
+                    let _ = config
+                        .persistence
+                        .tx
+                        .send(PersistenceMsg::PlanModeState(snapshot));
+                }
+            }
+            let activated = config.debug_mode.lock().activate_from_tool();
+            if activated {
+                *config.current_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
+                *config.turn_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
+                let snapshot = config.debug_mode.lock().snapshot();
+                let _ = config
+                    .persistence
+                    .tx
+                    .send(PersistenceMsg::DebugModeState(snapshot));
+                emit_current_mode_update(config, xai_grok_tools::types::SessionMode::Debug).await;
+            }
+            tracing::info!(
+                tool_call_id = %entered.tool_call_id,
+                activated,
+                "Debug mode entered via EnterDebugMode tool"
+            );
+        }
+
+        ToolNotification::DebugModeExited(exited) => {
+            let deactivated = config.debug_mode.lock().deactivate_approved();
+            if deactivated {
+                *config.current_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
+                *config.turn_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
+                let snapshot = config.debug_mode.lock().snapshot();
+                let _ = config
+                    .persistence
+                    .tx
+                    .send(PersistenceMsg::DebugModeState(snapshot));
+                emit_current_mode_update(config, xai_grok_tools::types::SessionMode::Default).await;
+            }
+            tracing::info!(
+                tool_call_id = %exited.tool_call_id,
+                deactivated,
+                debug_log_path = %exited.debug_log_path,
+                "Debug mode exited via ExitDebugMode tool"
+            );
+        }
+
         ToolNotification::UserQuestionAsked(asked) => {
             tracing::info!(
                 tool_call_id = %asked.tool_call_id,

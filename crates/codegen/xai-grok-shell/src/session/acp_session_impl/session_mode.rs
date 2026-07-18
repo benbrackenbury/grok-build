@@ -6,7 +6,8 @@ pub(super) fn prompt_mode_from_session_mode_id(session_mode_id: &acp::SessionMod
     match SessionMode::from_id(session_mode_id.0.as_ref()) {
         SessionMode::Plan => PromptMode::Plan,
         SessionMode::Ask => PromptMode::Ask,
-        SessionMode::Default => PromptMode::Agent,
+        // Debug mode is a full agent loop (instrument + fix); keep Agent tools.
+        SessionMode::Default | SessionMode::Debug => PromptMode::Agent,
     }
 }
 /// Inverse of [`prompt_mode_from_session_mode_id`]: the mode id a client
@@ -45,6 +46,21 @@ impl SessionActor {
         *self.current_prompt_mode.lock() = prompt_mode;
         let mode = SessionMode::from_id(session_mode_id.0.as_ref());
         if mode.is_plan() {
+            // Mutual exclusion with debug mode.
+            {
+                let turn_in_flight = self.state.lock().await.running_task.is_some();
+                let mut debug = self.debug_mode.lock();
+                if debug.is_active() || debug.state() != crate::session::debug_mode::DebugModeState::Inactive
+                {
+                    debug.user_exit(turn_in_flight);
+                    let snapshot = debug.snapshot();
+                    drop(debug);
+                    let _ = self
+                        .notifications
+                        .persistence_tx
+                        .send(PersistenceMsg::DebugModeState(snapshot));
+                }
+            }
             let entered = self.plan_mode.lock().enter_pending();
             if entered {
                 self.persist_plan_mode_state();
@@ -82,6 +98,33 @@ impl SessionActor {
             }
             return;
         }
+        if mode.is_debug() {
+            // Mutual exclusion with plan mode.
+            {
+                let turn_in_flight = self.state.lock().await.running_task.is_some();
+                let was_plan = {
+                    let tracker = self.plan_mode.lock();
+                    tracker.state() != crate::session::plan_mode::PlanModeState::Inactive
+                };
+                if was_plan {
+                    self.plan_mode.lock().user_exit(turn_in_flight);
+                    self.persist_plan_mode_state();
+                }
+            }
+            let entered = self.debug_mode.lock().enter_pending();
+            if entered {
+                self.persist_debug_mode_state();
+                self.enqueue_current_mode_update(acp::SessionModeId::new(
+                    SessionMode::Debug.as_id(),
+                ));
+            }
+            tracing::info!(
+                session_id = %self.session_info.id.0,
+                entered,
+                "Debug mode toggled ON (Pending)"
+            );
+            return;
+        }
         let was_plan = {
             let tracker = self.plan_mode.lock();
             tracker.state() != crate::session::plan_mode::PlanModeState::Inactive
@@ -113,6 +156,22 @@ impl SessionActor {
                 enabled = false,
             )
             .in_scope(|| {});
+        }
+        let was_debug = {
+            let tracker = self.debug_mode.lock();
+            tracker.state() != crate::session::debug_mode::DebugModeState::Inactive
+        };
+        if was_debug {
+            let turn_in_flight = self.state.lock().await.running_task.is_some();
+            self.debug_mode.lock().user_exit(turn_in_flight);
+            self.persist_debug_mode_state();
+            self.enqueue_current_mode_update(session_mode_id.clone());
+            tracing::info!(
+                session_id = %self.session_info.id.0,
+                new_mode = %session_mode_id.0,
+                turn_in_flight,
+                "Debug mode toggled OFF"
+            );
         }
         let agent_def = match session_mode_id.0.as_ref() {
             "browser_use" => Some(AgentDefinition::browser_use()),
@@ -402,5 +461,110 @@ impl SessionActor {
             .notifications
             .persistence_tx
             .send(PersistenceMsg::PlanModeState(snapshot));
+    }
+
+    pub(super) fn persist_debug_mode_state(&self) {
+        let snapshot = self.debug_mode.lock().snapshot();
+        let _ = self
+            .notifications
+            .persistence_tx
+            .send(PersistenceMsg::DebugModeState(snapshot));
+    }
+
+    /// Inject debug-mode system-reminders (Pending→Active, per-turn, exit).
+    pub(super) async fn inject_debug_mode_reminders(&self) {
+        use crate::session::debug_mode::{
+            DebugModeState, debug_mode_exit_reminder_template, debug_mode_reminder_full_template,
+            debug_mode_reminder_sparse_template, debug_mode_reentry_reminder_template,
+        };
+        let push_reminder = |this: &Self, content: &str| {
+            this.push_system_reminder_with_tag(content, this.reminder_wrapper_tag());
+        };
+        let mut injected_this_turn = false;
+        let activation = {
+            let tracker = self.debug_mode.lock();
+            if tracker.state() == DebugModeState::Pending {
+                let snap = tracker.snapshot();
+                Some((
+                    snap.was_previously_active,
+                    tracker.debug_log_path().to_path_buf(),
+                    tracker.debug_scratch_path().to_path_buf(),
+                ))
+            } else {
+                None
+            }
+        };
+        if let Some((is_reentry, log_path, scratch_path)) = activation {
+            self.debug_mode.lock().activate();
+            self.persist_debug_mode_state();
+            let template = if is_reentry {
+                debug_mode_reentry_reminder_template()
+            } else {
+                debug_mode_reminder_full_template()
+            };
+            if let Some(rendered) = self
+                .render_debug_template(template, &log_path, &scratch_path)
+                .await
+            {
+                push_reminder(self, &rendered);
+                injected_this_turn = true;
+                self.debug_mode.lock().record_reminder_injected();
+                self.persist_debug_mode_state();
+                tracing::info!(
+                    session_id = %self.session_info.id.0,
+                    is_reentry,
+                    "Debug mode activated: injected system-reminder"
+                );
+            }
+        }
+        if !injected_this_turn {
+            let per_turn = {
+                let tracker = self.debug_mode.lock();
+                tracker.is_active().then(|| {
+                    (
+                        tracker.should_use_full_reminder(),
+                        tracker.debug_log_path().to_path_buf(),
+                        tracker.debug_scratch_path().to_path_buf(),
+                    )
+                })
+            };
+            if let Some((use_full, log_path, scratch_path)) = per_turn {
+                let template = if use_full {
+                    debug_mode_reminder_full_template()
+                } else {
+                    debug_mode_reminder_sparse_template()
+                };
+                if let Some(rendered) = self
+                    .render_debug_template(template, &log_path, &scratch_path)
+                    .await
+                {
+                    push_reminder(self, &rendered);
+                    self.debug_mode.lock().record_reminder_injected();
+                    self.persist_debug_mode_state();
+                }
+            }
+        }
+        if self.debug_mode.lock().has_pending_exit_reminder() {
+            push_reminder(self, debug_mode_exit_reminder_template());
+            self.debug_mode.lock().clear_pending_exit_reminder();
+            self.persist_debug_mode_state();
+        }
+    }
+
+    async fn render_debug_template(
+        &self,
+        template: &str,
+        log_path: &std::path::Path,
+        scratch_path: &std::path::Path,
+    ) -> Option<String> {
+        let extra = serde_json::json!({
+            "debug_log_path": log_path.display().to_string(),
+            "debug_scratch_path": scratch_path.display().to_string(),
+        });
+        self.agent
+            .borrow()
+            .tool_bridge()
+            .render_prompt(template, &extra)
+            .await
     }
 }

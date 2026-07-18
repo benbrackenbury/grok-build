@@ -76,6 +76,9 @@ fn make_test_config_full_raw() -> (
         plan_mode: Arc::new(parking_lot::Mutex::new(
             crate::session::plan_mode::PlanModeTracker::new(PathBuf::from("/tmp/test-session")),
         )),
+        debug_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::debug_mode::DebugModeTracker::new(PathBuf::from("/tmp/test-session")),
+        )),
         current_prompt_mode: Arc::new(parking_lot::Mutex::new(
             crate::session::plan_mode::PromptMode::Agent,
         )),
