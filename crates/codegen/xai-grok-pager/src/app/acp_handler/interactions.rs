@@ -250,3 +250,130 @@ pub(super) fn plan_review_source_for_tool(
         .filter(|title| *title == "CreatePlan" || *title == "Plan: Submit for approval")
         .map_or(PlanReviewSource::FileBacked, |_| PlanReviewSource::Inline)
 }
+
+/// Handle `x.ai/await_debug_reproduction` — open Proceed chrome.
+pub(super) fn handle_await_debug_reproduction(
+    ext: xai_acp_lib::AcpArgs<acp::ExtRequest>,
+    app: &mut AppView,
+) -> bool {
+    use crate::views::debug_hitl_view::DebugHitlViewState;
+    use xai_grok_tools::implementations::grok_build::await_debug_reproduction::types::AwaitDebugReproductionExtRequest;
+
+    let params: AwaitDebugReproductionExtRequest = match serde_json::from_str(ext.request.params.get())
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to parse AwaitDebugReproductionExtRequest: {e}");
+            ext.response_tx
+                .send(Err(acp::Error::new(
+                    -32602,
+                    format!("Invalid await_debug_reproduction params: {e}"),
+                )))
+                .ok();
+            return false;
+        }
+    };
+
+    let Some(id) = interaction_target_agent(app, &params.session_id) else {
+        tracing::info!(
+            session_id = %params.session_id,
+            "await_debug_reproduction for session with no local view; parked for replay"
+        );
+        drop(ext.response_tx);
+        return false;
+    };
+    let is_active = is_matched_agent_active(app, id);
+    let Some(agent) = app.agents.get_mut(&id) else {
+        drop(ext.response_tx);
+        return false;
+    };
+
+    if let Some(mut old) = agent.debug_hitl_view.take() {
+        old.send_stale_cancel();
+        if let Some(stashed) = old.take_stashed_prompt() {
+            agent.prompt.restore(stashed);
+        }
+    }
+
+    // Commit steps into scrollback so the user can re-read them.
+    agent.scrollback.push_block(crate::scrollback::block::RenderBlock::system(
+        format!(
+            "## Reproduce the bug (runId={})\n\n{}\n\nLog: `{}`\n\nPress **p** to Proceed, **q** to Abandon.",
+            params.run_id, params.steps, params.log_path
+        ),
+    ));
+
+    let stashed = agent.prompt.stash();
+    agent.debug_hitl_view = Some(DebugHitlViewState::from_reproduction(
+        params,
+        stashed,
+        ext.response_tx,
+    ));
+    agent.prompt.set_text("");
+
+    tracing::info!(target_active = is_active, "Opened debug reproduction HITL");
+    is_active
+}
+
+/// Handle `x.ai/await_debug_verification` — open Mark Fixed chrome.
+pub(super) fn handle_await_debug_verification(
+    ext: xai_acp_lib::AcpArgs<acp::ExtRequest>,
+    app: &mut AppView,
+) -> bool {
+    use crate::views::debug_hitl_view::DebugHitlViewState;
+    use xai_grok_tools::implementations::grok_build::await_debug_verification::types::AwaitDebugVerificationExtRequest;
+
+    let params: AwaitDebugVerificationExtRequest = match serde_json::from_str(ext.request.params.get())
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to parse AwaitDebugVerificationExtRequest: {e}");
+            ext.response_tx
+                .send(Err(acp::Error::new(
+                    -32602,
+                    format!("Invalid await_debug_verification params: {e}"),
+                )))
+                .ok();
+            return false;
+        }
+    };
+
+    let Some(id) = interaction_target_agent(app, &params.session_id) else {
+        tracing::info!(
+            session_id = %params.session_id,
+            "await_debug_verification for session with no local view; parked for replay"
+        );
+        drop(ext.response_tx);
+        return false;
+    };
+    let is_active = is_matched_agent_active(app, id);
+    let Some(agent) = app.agents.get_mut(&id) else {
+        drop(ext.response_tx);
+        return false;
+    };
+
+    if let Some(mut old) = agent.debug_hitl_view.take() {
+        old.send_stale_cancel();
+        if let Some(stashed) = old.take_stashed_prompt() {
+            agent.prompt.restore(stashed);
+        }
+    }
+
+    agent.scrollback.push_block(crate::scrollback::block::RenderBlock::system(
+        format!(
+            "## Verify the fix (runId={})\n\n{}\n\nLog: `{}`\n\nPress **f** Mark Fixed, **b** Still broken, **q** Abandon.",
+            params.run_id, params.summary, params.log_path
+        ),
+    ));
+
+    let stashed = agent.prompt.stash();
+    agent.debug_hitl_view = Some(DebugHitlViewState::from_verification(
+        params,
+        stashed,
+        ext.response_tx,
+    ));
+    agent.prompt.set_text("");
+
+    tracing::info!(target_active = is_active, "Opened debug verification HITL");
+    is_active
+}
