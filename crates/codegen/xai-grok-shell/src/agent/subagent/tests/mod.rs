@@ -1278,6 +1278,11 @@ fn dummy_tracker(
         plan_mode: Arc::new(
             parking_lot::Mutex::new(PlanModeTracker::new(PathBuf::from("/tmp"))),
         ),
+        debug_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
+                "/tmp/test-session",
+            )),
+        )),
         force_compact: Arc::new(AtomicBool::new(false)),
         permission_handle: xai_grok_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,
