@@ -629,6 +629,9 @@ impl AgentView {
                 ActionId::ToggleMultiline => {
                     return InputOutcome::Action(Action::SetMultilineMode(!self.multiline_mode));
                 }
+                ActionId::OpenPromptInEditor => {
+                    return InputOutcome::Action(Action::OpenPromptInEditor);
+                }
                 other => {
                     if let Some(outcome) = resolve_action(Some(other)) {
                         return outcome;
@@ -1367,6 +1370,21 @@ mod history_browse_panel_tests {
         agent.handle_prompt_key_for_test(&KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
         assert!(!agent.prompt.history_search.is_active());
         assert_eq!(agent.prompt.text(), "");
+    }
+
+    /// Ctrl+G while the prompt is focused opens the draft in `$EDITOR`.
+    #[test]
+    fn ctrl_g_emits_open_prompt_in_editor() {
+        let mut agent = agent_with_history(&[]);
+        agent.prompt.set_text("long draft");
+        let outcome = agent
+            .handle_prompt_key_for_test(&KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL));
+        assert!(
+            matches!(outcome, InputOutcome::Action(Action::OpenPromptInEditor)),
+            "expected OpenPromptInEditor, got {outcome:?}"
+        );
+        // Draft is left in place until dispatch writes the temp file.
+        assert_eq!(agent.prompt.text(), "long draft");
     }
 
     #[test]

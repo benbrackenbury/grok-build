@@ -2025,6 +2025,7 @@ fn resolve_action(action_id: Option<ActionId>) -> Option<InputOutcome> {
         ActionId::DumpInputLog => return None,
         ActionId::ToggleYolo => return None,
         ActionId::ToggleMultiline => return None,
+        ActionId::OpenPromptInEditor => return None,
         ActionId::InterjectPrompt => return None,
         ActionId::EnableVoiceMode => Action::EnableVoiceMode,
         ActionId::VoiceToggle => Action::VoiceToggle,
