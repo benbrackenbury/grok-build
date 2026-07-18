@@ -40,6 +40,10 @@ pub enum PendingKind {
     Question,
     /// `x.ai/exit_plan_mode` plan approval.
     PlanApproval,
+    /// `x.ai/await_debug_reproduction` — user should reproduce then Proceed.
+    DebugReproduction,
+    /// `x.ai/await_debug_verification` — user should Mark Fixed / Still broken.
+    DebugVerification,
 }
 
 /// Whether a blocking plan-approval reverse-request is parked in `pending`.
