@@ -45,8 +45,85 @@ impl AgentView {
     pub(crate) fn no_input_overlay_pending(&self) -> bool {
         self.permission_queue.is_empty()
             && self.plan_approval_view.is_none()
+            && self.debug_hitl_view.is_none()
             && self.cancel_turn_view.is_none()
             && self.question_view.is_none()
+    }
+
+    /// Handle keys while debug HITL (Proceed / Mark Fixed) is parked.
+    /// Returns `Some` when the key was consumed.
+    pub(crate) fn try_handle_debug_hitl_key(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Option<InputOutcome> {
+        use crate::views::debug_hitl_view::DebugHitlKind;
+        if self.debug_hitl_view.is_none() {
+            return None;
+        }
+        let kind = self.debug_hitl_view.as_ref()?.kind;
+        match kind {
+            DebugHitlKind::Reproduction => {
+                if key!('p').matches(key) || key!(Enter).matches(key) {
+                    return Some(self.finish_debug_hitl_repro("proceeded"));
+                }
+                if key!('q').matches(key) {
+                    return Some(self.finish_debug_hitl_repro("abandoned"));
+                }
+                if key!(Esc).matches(key) {
+                    return Some(self.finish_debug_hitl_repro("cancelled"));
+                }
+            }
+            DebugHitlKind::Verification => {
+                if key!('f').matches(key) {
+                    return Some(self.finish_debug_hitl_verify("fixed"));
+                }
+                if key!('b').matches(key) {
+                    return Some(self.finish_debug_hitl_verify("still_broken"));
+                }
+                if key!('q').matches(key) {
+                    return Some(self.finish_debug_hitl_verify("abandoned"));
+                }
+                if key!(Esc).matches(key) {
+                    return Some(self.finish_debug_hitl_verify("cancelled"));
+                }
+            }
+        }
+        // Swallow other keys while HITL is open so they don't type into the stashed prompt path.
+        Some(InputOutcome::Changed)
+    }
+
+    fn finish_debug_hitl_repro(&mut self, outcome: &str) -> InputOutcome {
+        let Some(mut view) = self.debug_hitl_view.take() else {
+            return InputOutcome::Changed;
+        };
+        view.send_reproduction_outcome(outcome, None);
+        if outcome == "abandoned" {
+            self.debug_mode_pending = Some(false);
+            self.show_toast(
+                "Debug mode abandoned — agent log regions may remain; search for #region agent log",
+            );
+        }
+        if let Some(stashed) = view.take_stashed_prompt() {
+            self.prompt.restore(stashed);
+        }
+        InputOutcome::Changed
+    }
+
+    fn finish_debug_hitl_verify(&mut self, outcome: &str) -> InputOutcome {
+        let Some(mut view) = self.debug_hitl_view.take() else {
+            return InputOutcome::Changed;
+        };
+        view.send_verification_outcome(outcome, None);
+        if outcome == "abandoned" {
+            self.debug_mode_pending = Some(false);
+            self.show_toast(
+                "Debug mode abandoned — agent log regions may remain; search for #region agent log",
+            );
+        }
+        if let Some(stashed) = view.take_stashed_prompt() {
+            self.prompt.restore(stashed);
+        }
+        InputOutcome::Changed
     }
     /// Whether FocusGained should move focus from Scrollback → Prompt.
     ///
@@ -387,6 +464,13 @@ impl AgentView {
         }
         if let Event::Paste(text) = ev
             && let Some(outcome) = self.try_handle_wrap_host_image_paste(text)
+        {
+            return outcome;
+        }
+        // Debug HITL (Proceed / Mark Fixed) owns keys while parked.
+        if let Event::Key(key) = ev
+            && key.kind != KeyEventKind::Release
+            && let Some(outcome) = self.try_handle_debug_hitl_key(key)
         {
             return outcome;
         }
