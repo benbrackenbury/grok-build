@@ -7163,13 +7163,18 @@ fn max_thoughts_width_preview_title_styling_distinguishes_from_content() {
         // Resolved via `Theme::current()` rather than a constructor
         // because `theme::oscura` is a private module.
         crate::theme::ThemeKind::OscuraMidnight => crate::theme::Theme::current(),
+        crate::theme::ThemeKind::System => crate::theme::Theme::terminal_default(),
         crate::theme::ThemeKind::Auto => crate::theme::Theme::groknight(),
     };
-    assert_ne!(
-        raw_theme.bg_visual, raw_theme.bg_highlight,
-        "raw theme tokens bg_visual + bg_highlight must be distinct so the preview \
-         reads as a contained block with two-tone bg",
-    );
+    // System uses Reset for both elevated surfaces (transparent terminal
+    // canvas); skip the two-tone assertion that only applies to RGB themes.
+    if !matches!(crate::theme::Theme::current_kind(), crate::theme::ThemeKind::System) {
+        assert_ne!(
+            raw_theme.bg_visual, raw_theme.bg_highlight,
+            "raw theme tokens bg_visual + bg_highlight must be distinct so the preview \
+             reads as a contained block with two-tone bg",
+        );
+    }
 }
 
 /// Test 5: content rows wrap at the pending value — no

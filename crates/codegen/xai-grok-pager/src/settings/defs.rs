@@ -46,6 +46,11 @@ const THEME_CHOICES: &[EnumChoice] = &[
         description: "Follow system dark/light appearance.",
     },
     EnumChoice {
+        canonical: "system",
+        display: "System",
+        description: "Transparent bg; inherits terminal colors.",
+    },
+    EnumChoice {
         canonical: "groknight",
         display: "Grok Night",
         description: "Neutral dark with magenta accent.",
@@ -494,6 +499,11 @@ const VOICE_STT_LANGUAGE_CHOICES: &[EnumChoice] = &[
 /// the user can pair any theme with any system-appearance bucket.
 const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
     EnumChoice {
+        canonical: "system",
+        display: "System",
+        description: "Transparent bg; inherits terminal colors.",
+    },
+    EnumChoice {
         canonical: "groknight",
         display: "Grok Night",
         description: "Neutral dark with magenta accent.",
@@ -757,6 +767,9 @@ pub fn default_settings() -> Vec<SettingMeta> {
                 "appearance",
                 "dark",
                 "light",
+                "system",
+                "terminal",
+                "transparent",
             ],
             kind: SettingKind::Enum {
                 // `Option<String>` — `None` resolved to "groknight".

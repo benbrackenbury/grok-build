@@ -34,6 +34,10 @@ pub enum ThemeKind {
     TokyoNight = 2,
     RosePineMoon = 3,
     OscuraMidnight = 5,
+    /// Terminal-native palette: transparent backgrounds (`Color::Reset`)
+    /// plus ANSI-16 accents so the TUI inherits the host terminal's
+    /// colors and transparency (OpenCode-style `system` theme).
+    System = 6,
     /// Meta-variant: follow system dark/light appearance.
     ///
     /// Never stored in `cache::CURRENT` — resolved to a concrete
@@ -52,6 +56,7 @@ impl ThemeKind {
         ThemeKind::TokyoNight,
         ThemeKind::RosePineMoon,
         ThemeKind::OscuraMidnight,
+        ThemeKind::System,
     ];
 
     /// Theme kinds available on the current terminal.
@@ -62,7 +67,11 @@ impl ThemeKind {
         // Two possible results — pick the right const slice based on
         // the detected color level. No heap allocation needed.
         const ALL: &[ThemeKind] = ThemeKind::ALL;
-        const NO_TRUECOLOR: &[ThemeKind] = &[ThemeKind::GrokNight, ThemeKind::GrokDay];
+        const NO_TRUECOLOR: &[ThemeKind] = &[
+            ThemeKind::GrokNight,
+            ThemeKind::GrokDay,
+            ThemeKind::System,
+        ];
 
         if color_support::detect().has_truecolor() {
             ALL
@@ -79,6 +88,7 @@ impl ThemeKind {
             Self::GrokDay => "grokday",
             Self::RosePineMoon => "rosepine-moon",
             Self::OscuraMidnight => "oscura-midnight",
+            Self::System => "system",
             Self::Auto => "auto",
         }
     }
@@ -87,7 +97,7 @@ impl ThemeKind {
     ///
     /// TokyoNight uses blue-tinted backgrounds that lose their character
     /// when quantized to 256 or 16 colors. GrokNight uses neutral grays
-    /// that survive quantization cleanly.
+    /// that survive quantization cleanly. System uses only Reset + ANSI-16.
     pub fn requires_truecolor(self) -> bool {
         match self {
             Self::GrokNight => false,
@@ -95,6 +105,7 @@ impl ThemeKind {
             Self::GrokDay => false,
             Self::RosePineMoon => true,
             Self::OscuraMidnight => true,
+            Self::System => false,
             // Auto is resolved to a concrete theme before rendering.
             Self::Auto => false,
         }
@@ -105,7 +116,11 @@ impl ThemeKind {
     pub fn from_name(name: &str) -> Option<Self> {
         let lower = name.to_lowercase();
         match lower.as_str() {
-            "auto" | "system" => Some(Self::Auto),
+            "auto" => Some(Self::Auto),
+            // OpenCode-style terminal-native theme (transparent bg + ANSI).
+            // Also accepts `terminal` / `transparent`. Note: `system` used to
+            // alias `auto`; it now selects this concrete theme.
+            "system" | "terminal" | "transparent" => Some(Self::System),
             "groknight" | "grok-night" | "dark" => Some(Self::GrokNight),
             "tokyonight" | "tokyo-night" | "tokyo" => Some(Self::TokyoNight),
             "grokday" | "grok-day" | "light" | "day" => Some(Self::GrokDay),
@@ -144,10 +159,12 @@ pub fn canonical_name(value: &str) -> Option<&'static str> {
 pub fn display_name_for_canonical(value: &str) -> &str {
     match value {
         "auto" => "Auto",
+        "system" => "System",
         "groknight" => "Grok Night",
         "grokday" => "Grok Day",
         "tokyonight" => "Tokyo Night",
         "rosepine-moon" => "Rose Pine Moon",
+        "oscura-midnight" => "Oscura Midnight",
         other => other,
     }
 }
@@ -268,12 +285,14 @@ impl Theme {
         if cache::terminal_native_locked() {
             return Self::terminal_default().quantized(level);
         }
-        let base = match cache::current_kind() {
+        let kind = cache::current_kind();
+        let base = match kind {
             ThemeKind::GrokNight => Self::groknight(),
             ThemeKind::TokyoNight => Self::tokyonight(),
             ThemeKind::GrokDay => Self::grokday(),
             ThemeKind::RosePineMoon => Self::rosepine_moon(),
             ThemeKind::OscuraMidnight => Self::oscura_midnight(),
+            ThemeKind::System => Self::terminal_default(),
             // Auto is resolved to a concrete theme before being stored;
             // if reached, fall back to GrokNight.
             ThemeKind::Auto => Self::groknight(),
@@ -282,6 +301,12 @@ impl Theme {
         // land on a named/indexed entry whose luminance is host-palette-
         // dependent.
         let dark = base.is_dark();
+        // System is already Reset + ANSI-16; contrast boost and the
+        // ANSI16 chrome pins would replace transparent backgrounds with
+        // solid Black/DarkGray and defeat the terminal-native look.
+        if matches!(kind, ThemeKind::System) {
+            return base.quantized(level);
+        }
         let adapted = if cfg!(target_os = "windows") {
             base.windows_contrast_boost(dark)
         } else {
@@ -679,19 +704,26 @@ mod tests {
 
     #[test]
     fn from_name_system() {
-        assert_eq!(ThemeKind::from_name("system"), Some(ThemeKind::Auto));
+        assert_eq!(ThemeKind::from_name("system"), Some(ThemeKind::System));
+        assert_eq!(ThemeKind::from_name("terminal"), Some(ThemeKind::System));
+        assert_eq!(ThemeKind::from_name("transparent"), Some(ThemeKind::System));
     }
 
     #[test]
     fn from_name_auto_case_insensitive() {
         assert_eq!(ThemeKind::from_name("AUTO"), Some(ThemeKind::Auto));
         assert_eq!(ThemeKind::from_name("Auto"), Some(ThemeKind::Auto));
-        assert_eq!(ThemeKind::from_name("SYSTEM"), Some(ThemeKind::Auto));
+        assert_eq!(ThemeKind::from_name("SYSTEM"), Some(ThemeKind::System));
     }
 
     #[test]
     fn display_name_auto() {
         assert_eq!(ThemeKind::Auto.display_name(), "auto");
+    }
+
+    #[test]
+    fn display_name_system() {
+        assert_eq!(ThemeKind::System.display_name(), "system");
     }
 
     #[test]
@@ -706,6 +738,7 @@ mod tests {
         assert!(!ThemeKind::TokyoNight.is_auto());
         assert!(!ThemeKind::RosePineMoon.is_auto());
         assert!(!ThemeKind::OscuraMidnight.is_auto());
+        assert!(!ThemeKind::System.is_auto());
     }
 
     #[test]
@@ -714,8 +747,69 @@ mod tests {
     }
 
     #[test]
+    fn all_includes_system() {
+        assert!(ThemeKind::ALL.contains(&ThemeKind::System));
+    }
+
+    #[test]
     fn available_excludes_auto() {
         assert!(!ThemeKind::available().contains(&ThemeKind::Auto));
+    }
+
+    #[test]
+    fn available_includes_system() {
+        assert!(ThemeKind::available().contains(&ThemeKind::System));
+    }
+
+    #[test]
+    fn system_does_not_require_truecolor() {
+        assert!(!ThemeKind::System.requires_truecolor());
+    }
+
+    #[test]
+    fn theme_current_serves_terminal_default_for_system() {
+        let _guard = cache::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        cache::reset_for_test();
+        cache::set(ThemeKind::System);
+        let theme = Theme::current();
+        // Compare against the same quantization Theme::current applies so
+        // the assertion holds under NO_COLOR / 16-color too.
+        let expected = Theme::terminal_default().quantized(color_support::detect());
+        assert_eq!(theme.bg_base, expected.bg_base);
+        assert_eq!(theme.bg_base, ratatui::style::Color::Reset);
+        assert_eq!(theme.text_primary, expected.text_primary);
+        assert_eq!(theme.accent_error, expected.accent_error);
+        assert_eq!(theme.accent_success, expected.accent_success);
+        assert_eq!(Theme::current_kind(), ThemeKind::System);
+        cache::reset_for_test();
+    }
+
+    #[test]
+    fn system_theme_skips_ansi16_chrome_overrides() {
+        // Regression: on Basic terminals, ansi16_chrome_overrides would
+        // repaint Reset backgrounds as Black/DarkGray and destroy the
+        // terminal-native transparent look.
+        let _guard = cache::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        cache::reset_for_test();
+        cache::set(ThemeKind::System);
+        // Force Basic-level quantization path by constructing manually
+        // (COLOR_LEVEL OnceLock may already be TrueColor in tests).
+        let theme = Theme::terminal_default().quantized(color_support::ColorLevel::Basic);
+        // Simulate Theme::current's System early-return: no chrome overrides.
+        assert_eq!(theme.bg_base, ratatui::style::Color::Reset);
+        assert_eq!(theme.bg_light, ratatui::style::Color::Reset);
+        assert_eq!(theme.bg_highlight, ratatui::style::Color::Reset);
+        assert_eq!(theme.md_code_bg, ratatui::style::Color::Reset);
+        // Accents remain named ANSI (not collapsed to gray).
+        if color_support::detect().has_color() {
+            // Only assert when color is enabled — under NO_COLOR accents
+            // also quantize to Reset.
+            let full = Theme::terminal_default();
+            let q = full.quantized(color_support::ColorLevel::Basic);
+            assert_eq!(q.accent_error, ratatui::style::Color::Red);
+            assert_eq!(q.accent_success, ratatui::style::Color::Green);
+        }
+        cache::reset_for_test();
     }
 
     #[test]
@@ -1057,12 +1151,18 @@ mod tests {
             r as i32 + g as i32 + b as i32
         };
         for &kind in ThemeKind::ALL {
+            // System uses Color::Reset for chrome (inherits the terminal
+            // canvas); there is no RGB luminance delta to assert.
+            if matches!(kind, ThemeKind::System) {
+                continue;
+            }
             let theme = match kind {
                 ThemeKind::GrokNight => Theme::groknight(),
                 ThemeKind::GrokDay => Theme::grokday(),
                 ThemeKind::TokyoNight => Theme::tokyonight(),
                 ThemeKind::RosePineMoon => Theme::rosepine_moon(),
                 ThemeKind::OscuraMidnight => Theme::oscura_midnight(),
+                ThemeKind::System => unreachable!("skipped above"),
                 ThemeKind::Auto => unreachable!("ALL excludes Auto"),
             };
             let track = lum(theme.scrollbar_bg, "scrollbar_bg", kind);
@@ -1219,7 +1319,9 @@ mod tests {
         // Mapping `from_name`'s alias matrix into the `FromStr` API.
         let cases = [
             ("auto", ThemeKind::Auto),
-            ("system", ThemeKind::Auto),
+            ("system", ThemeKind::System),
+            ("terminal", ThemeKind::System),
+            ("transparent", ThemeKind::System),
             ("groknight", ThemeKind::GrokNight),
             ("grok-night", ThemeKind::GrokNight),
             ("dark", ThemeKind::GrokNight),
@@ -1234,6 +1336,8 @@ mod tests {
             ("rose-pine", ThemeKind::RosePineMoon),
             ("rosepine-moon", ThemeKind::RosePineMoon),
             ("rose-pine-moon", ThemeKind::RosePineMoon),
+            ("oscura", ThemeKind::OscuraMidnight),
+            ("oscura-midnight", ThemeKind::OscuraMidnight),
         ];
         for (name, expected) in cases {
             assert_eq!(
