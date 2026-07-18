@@ -8,10 +8,10 @@ use serde_json::{Value, json};
 
 use xai_tool_runtime::{
     BashExecutionBackgrounded, BashExecutionComplete, BashExecutionFailed, BashExecutionTimeout,
-    BashNotificationBase, BashOutputChunk, FileWritten, LspServerCrashed, LspServerFailed,
-    LspServerReady, LspServerRetrying, LspServerStarting, MonitorEvent, PlanModeEntered,
-    PlanModeExited, ScheduledTaskCreated, ScheduledTaskFired, ScheduledTaskRemoved, TaskKind,
-    TaskSnapshot, ToolNotification, UserQuestionAsked,
+    BashNotificationBase, BashOutputChunk, DebugModeEntered, DebugModeExited, FileWritten,
+    LspServerCrashed, LspServerFailed, LspServerReady, LspServerRetrying, LspServerStarting,
+    MonitorEvent, PlanModeEntered, PlanModeExited, ScheduledTaskCreated, ScheduledTaskFired,
+    ScheduledTaskRemoved, TaskKind, TaskSnapshot, ToolNotification, UserQuestionAsked,
 };
 
 fn base() -> BashNotificationBase {
@@ -167,6 +167,26 @@ fn plan_mode_exited_round_trip() {
 }
 
 #[test]
+fn debug_mode_entered_round_trip() {
+    let n = ToolNotification::DebugModeEntered(DebugModeEntered {
+        tool_call_id: "call-debug-enter".into(),
+    });
+    let json = round_trip(&n);
+    assert_type_tag(&json, "DebugModeEntered");
+}
+
+#[test]
+fn debug_mode_exited_round_trip() {
+    let n = ToolNotification::DebugModeExited(DebugModeExited {
+        tool_call_id: "call-debug-exit".into(),
+        debug_log_path: "/tmp/session/debug.log".into(),
+    });
+    let json = round_trip(&n);
+    assert_type_tag(&json, "DebugModeExited");
+    assert_eq!(json["debug_log_path"], json!("/tmp/session/debug.log"));
+}
+
+#[test]
 fn user_question_asked_round_trip() {
     let n = ToolNotification::UserQuestionAsked(UserQuestionAsked {
         tool_call_id: "call-6".into(),
@@ -306,6 +326,13 @@ fn variant_count_matches_variant_name() {
             tool_call_id: String::new(),
             plan_content: None,
             plan_file_path: String::new(),
+        }),
+        ToolNotification::DebugModeEntered(DebugModeEntered {
+            tool_call_id: String::new(),
+        }),
+        ToolNotification::DebugModeExited(DebugModeExited {
+            tool_call_id: String::new(),
+            debug_log_path: String::new(),
         }),
         ToolNotification::UserQuestionAsked(UserQuestionAsked {
             tool_call_id: String::new(),

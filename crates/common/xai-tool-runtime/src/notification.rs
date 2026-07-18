@@ -177,6 +177,21 @@ pub struct PlanModeExited {
     pub plan_file_path: String,
 }
 
+/// Sent when the agent transitions into debug mode. Subscribers use this to
+/// switch UI affordances and inject debug-mode playbook context.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugModeEntered {
+    pub tool_call_id: String,
+}
+
+/// Sent when the agent transitions out of debug mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugModeExited {
+    pub tool_call_id: String,
+    /// Absolute path of the session NDJSON debug log.
+    pub debug_log_path: String,
+}
+
 /// Sent when the agent issues a structured question to the user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserQuestionAsked {
@@ -332,6 +347,8 @@ pub enum ToolNotification {
     TaskCompleted(TaskSnapshot),
     PlanModeEntered(PlanModeEntered),
     PlanModeExited(PlanModeExited),
+    DebugModeEntered(DebugModeEntered),
+    DebugModeExited(DebugModeExited),
     UserQuestionAsked(UserQuestionAsked),
     LspServerStarting(LspServerStarting),
     LspServerReady(LspServerReady),
@@ -358,6 +375,8 @@ impl ToolNotification {
             Self::TaskCompleted(_) => "TaskCompleted",
             Self::PlanModeEntered(_) => "PlanModeEntered",
             Self::PlanModeExited(_) => "PlanModeExited",
+            Self::DebugModeEntered(_) => "DebugModeEntered",
+            Self::DebugModeExited(_) => "DebugModeExited",
             Self::UserQuestionAsked(_) => "UserQuestionAsked",
             Self::LspServerStarting(_) => "LspServerStarting",
             Self::LspServerReady(_) => "LspServerReady",
@@ -469,6 +488,18 @@ impl ToolNotificationHandle {
     /// out of plan mode and the captured plan is attached.
     pub fn send_plan_mode_exited(&self, exited: PlanModeExited) {
         self.send(ToolNotification::PlanModeExited(exited));
+    }
+
+    /// Send a [`ToolNotification::DebugModeEntered`]: the agent
+    /// transitioned into debug mode.
+    pub fn send_debug_mode_entered(&self, entered: DebugModeEntered) {
+        self.send(ToolNotification::DebugModeEntered(entered));
+    }
+
+    /// Send a [`ToolNotification::DebugModeExited`]: the agent transitioned
+    /// out of debug mode.
+    pub fn send_debug_mode_exited(&self, exited: DebugModeExited) {
+        self.send(ToolNotification::DebugModeExited(exited));
     }
 
     /// Send a [`ToolNotification::UserQuestionAsked`]: the agent issued a

@@ -69,6 +69,11 @@ impl ToolKind {
             ToolKind::Monitor => "Monitor",
             ToolKind::GoalUpdate => "Update Goal",
             ToolKind::Workflow => "Workflow",
+            ToolKind::EnterDebug => "Enter Debug Mode",
+            ToolKind::ExitDebug => "Exit Debug Mode",
+            ToolKind::DebugAwaitRepro => "Await Reproduction",
+            ToolKind::DebugAwaitVerify => "Await Verification",
+            ToolKind::DebugReadLogs => "Read Debug Logs",
             ToolKind::Other => "Tool",
         }
     }
@@ -89,7 +94,12 @@ impl ToolKind {
             | ToolKind::WebFetch
             | ToolKind::EnterPlan
             | ToolKind::ExitPlan
-            | ToolKind::AskUser => true,
+            | ToolKind::AskUser
+            | ToolKind::EnterDebug
+            | ToolKind::ExitDebug
+            | ToolKind::DebugAwaitRepro
+            | ToolKind::DebugAwaitVerify
+            | ToolKind::DebugReadLogs => true,
             ToolKind::Edit
             | ToolKind::Delete
             | ToolKind::Write
