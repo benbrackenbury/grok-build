@@ -1171,6 +1171,11 @@ fn make_test_handle(
         plan_mode: std::sync::Arc::new(parking_lot::Mutex::new(
             crate::session::plan_mode::PlanModeTracker::new(std::path::PathBuf::from("/tmp")),
         )),
+        debug_mode: std::sync::Arc::new(parking_lot::Mutex::new(
+            crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
+                "/tmp",
+            )),
+        )),
         force_compact: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         permission_handle: xai_grok_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,
