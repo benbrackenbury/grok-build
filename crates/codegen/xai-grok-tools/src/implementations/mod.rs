@@ -15,9 +15,10 @@ pub mod use_tool;
 pub mod web_search;
 pub use grok_build::bash::{BashError, BashToolInput};
 pub use grok_build::{
-    AskUserQuestionTool, BashTool, EnterPlanModeTool, ExitPlanModeTool, GrepTool, KillTaskTool,
-    ListDirTool, ReadFileTool, SearchReplaceTool, TaskOutputTool, TaskTool, TodoWriteTool,
-    WaitTasksTool, WebFetchTool, WebSearchTool,
+    AskUserQuestionTool, AwaitDebugReproductionTool, AwaitDebugVerificationTool, BashTool,
+    EnterDebugModeTool, EnterPlanModeTool, ExitDebugModeTool, ExitPlanModeTool, GrepTool,
+    KillTaskTool, ListDirTool, ReadDebugLogsTool, ReadFileTool, SearchReplaceTool, TaskOutputTool,
+    TaskTool, TodoWriteTool, WaitTasksTool, WebFetchTool, WebSearchTool,
 };
 pub use memory::{MemoryGetImpl, MemorySearchImpl};
 pub use opencode::{
