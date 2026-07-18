@@ -241,6 +241,32 @@ pub struct PlanModeExited {
     pub plan_file_path: String,
 }
 
+/// Notification that the agent has entered debug mode.
+///
+/// Sent by the `EnterDebugMode` tool so the gateway / client can transition
+/// into debug-mode state (inject playbook reminders, show debug UI flag).
+#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DebugModeEntered {
+    /// The tool call ID (correlates with the EnterDebugMode tool invocation)
+    pub tool_call_id: String,
+}
+
+/// Notification that the agent has exited debug mode.
+///
+/// Sent by the `ExitDebugMode` tool so the gateway / client can leave
+/// debug-mode UI state. Carries the session debug log path for any
+/// final presentation.
+#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DebugModeExited {
+    /// The tool call ID (correlates with the ExitDebugMode tool invocation)
+    pub tool_call_id: String,
+
+    /// Absolute path of the session NDJSON debug log.
+    pub debug_log_path: String,
+}
+
 /// Notification that the agent is asking the user a question.
 ///
 /// Sent by the `AskUserQuestion` tool so the gateway / client can present
@@ -397,6 +423,12 @@ pub enum ToolNotification {
     /// approval and transition out of plan-mode state.
     PlanModeExited(PlanModeExited),
 
+    /// The agent requested to enter debug mode.
+    DebugModeEntered(DebugModeEntered),
+
+    /// The agent signaled it is done with debug mode.
+    DebugModeExited(DebugModeExited),
+
     /// The agent is asking the user a structured question.
     /// Consumers (gateway, TUI) use this to present the question UI
     /// and collect the user's answers.
@@ -470,6 +502,8 @@ notification_variants! {
     TaskCompleted => TaskSnapshot,
     PlanModeEntered => PlanModeEntered,
     PlanModeExited => PlanModeExited,
+    DebugModeEntered => DebugModeEntered,
+    DebugModeExited => DebugModeExited,
     UserQuestionAsked => UserQuestionAsked,
     LspServerStarting => LspServerStarting,
     LspServerReady => LspServerReady,
