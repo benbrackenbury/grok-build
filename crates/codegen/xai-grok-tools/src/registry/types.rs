@@ -695,6 +695,11 @@ impl ToolRegistryBuilder {
         b.register::<grok_build::ReferenceToVideoTool>();
         b.register::<grok_build::EnterPlanModeTool>();
         b.register::<grok_build::ExitPlanModeTool>();
+        b.register::<grok_build::EnterDebugModeTool>();
+        b.register::<grok_build::ExitDebugModeTool>();
+        b.register::<grok_build::AwaitDebugReproductionTool>();
+        b.register::<grok_build::AwaitDebugVerificationTool>();
+        b.register::<grok_build::ReadDebugLogsTool>();
         b.register_with_params::<
                 grok_build::AskUserQuestionTool,
                 grok_build::ask_user_question::AskUserQuestionParams,
@@ -2049,6 +2054,24 @@ fn explain_requirement_failure(
                 )
                 .with_field_path("tools")
                 .with_expected("include GrokBuild:enter_plan_mode")
+                .with_category("requirements")
+        }
+        "GrokBuild:enter_debug_mode" => {
+            RequirementError::new(
+                    fq_tool_id,
+                    "enter_debug_mode requires GrokBuild:exit_debug_mode so debug mode can always be exited",
+                )
+                .with_field_path("tools")
+                .with_expected("include GrokBuild:exit_debug_mode")
+                .with_category("requirements")
+        }
+        "GrokBuild:exit_debug_mode" => {
+            RequirementError::new(
+                    fq_tool_id,
+                    "exit_debug_mode requires GrokBuild:enter_debug_mode so debug mode can be entered before exiting",
+                )
+                .with_field_path("tools")
+                .with_expected("include GrokBuild:enter_debug_mode")
                 .with_category("requirements")
         }
         _ => {
