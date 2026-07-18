@@ -85,7 +85,9 @@ use background::{
 };
 use follow_ups::handle_follow_ups;
 pub(crate) use interactions::handle_ask_user_question;
-use interactions::handle_exit_plan_mode;
+use interactions::{
+    handle_await_debug_reproduction, handle_await_debug_verification, handle_exit_plan_mode,
+};
 use mcp::{
     handle_mcp_init_progress, handle_mcp_server_status, handle_mcp_servers_updated,
     handle_mcp_tools_changed, push_server_status_enabled,
@@ -692,6 +694,8 @@ fn handle_ext_method(ext: xai_acp_lib::AcpArgs<acp::ExtRequest>, app: &mut AppVi
     match ext.request.method.as_ref() {
         "x.ai/ask_user_question" => handle_ask_user_question(ext, app),
         "x.ai/exit_plan_mode" => handle_exit_plan_mode(ext, app),
+        "x.ai/await_debug_reproduction" => handle_await_debug_reproduction(ext, app),
+        "x.ai/await_debug_verification" => handle_await_debug_verification(ext, app),
         unknown => {
             tracing::warn!("Unknown ext_method: {unknown}");
             ext.response_tx

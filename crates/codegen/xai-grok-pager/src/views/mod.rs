@@ -28,6 +28,7 @@ pub mod overlay_list;
 pub mod permission_view;
 pub mod persona_detail;
 pub mod picker;
+pub mod debug_hitl_view;
 pub mod plan_approval_view;
 pub mod progress_bar;
 pub mod prompt_suggestion;
