@@ -101,6 +101,16 @@ pub enum ToolKind {
     Monitor,
     GoalUpdate,
     Workflow,
+    /// Agent-initiated entry into debug mode (hypothesis / instrumentation loop).
+    EnterDebug,
+    /// Leave debug mode after cleanup.
+    ExitDebug,
+    /// Park HITL until the user reproduces the bug (Proceed).
+    DebugAwaitRepro,
+    /// Park HITL until the user marks fixed or still-broken.
+    DebugAwaitVerify,
+    /// Read / filter the session NDJSON debug log.
+    DebugReadLogs,
     #[serde(other)]
     Other,
 }

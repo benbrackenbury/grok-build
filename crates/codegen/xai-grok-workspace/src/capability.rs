@@ -104,6 +104,11 @@ pub(crate) const ALL_TOOL_KINDS: &[ToolKind] = &[
     ToolKind::Monitor,
     ToolKind::GoalUpdate,
     ToolKind::Workflow,
+    ToolKind::EnterDebug,
+    ToolKind::ExitDebug,
+    ToolKind::DebugAwaitRepro,
+    ToolKind::DebugAwaitVerify,
+    ToolKind::DebugReadLogs,
     ToolKind::Other,
 ];
 
@@ -128,7 +133,8 @@ pub(crate) fn kind_allowed(mode: CapabilityMode, kind: ToolKind) -> bool {
 
     match kind {
         // Meta tools: always allowed.
-        Plan | EnterPlan | ExitPlan | AskUser | Skill | SearchTool | GoalUpdate => true,
+        Plan | EnterPlan | ExitPlan | AskUser | Skill | SearchTool | GoalUpdate | EnterDebug
+        | ExitDebug | DebugAwaitRepro | DebugAwaitVerify | DebugReadLogs => true,
 
         // Read class.
         Read | MemoryGet | MemorySearch => {
