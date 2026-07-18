@@ -2482,7 +2482,11 @@ mod tests {
                 line.starts_with(&format!("  themes       {n}/{total}: ")),
                 "level {level:?}: {line}"
             );
-            assert!(line.contains("groknight") && line.contains("grokday"));
+            assert!(
+                line.contains("groknight")
+                    && line.contains("grokday")
+                    && line.contains("system")
+            );
             assert!(!line.contains("tokyonight"));
         }
     }
