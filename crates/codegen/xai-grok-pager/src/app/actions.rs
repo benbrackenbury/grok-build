@@ -940,6 +940,10 @@ pub enum Action {
         /// Reload `/config-agents` list after the editor exits (when set).
         refresh_agents_modal: Option<crate::views::agents_modal::AgentsTab>,
     },
+    /// Write the active agent prompt draft to a temp file, suspend into
+    /// `$VISUAL`/`$EDITOR`, then reload the file into the prompt on exit
+    /// (Ctrl+G while the prompt is focused).
+    OpenPromptInEditor,
     /// Toggle the expanded goal detail overlay.
     ToggleGoalDetail,
     Rewind,

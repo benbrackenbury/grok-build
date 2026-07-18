@@ -228,6 +228,7 @@ fn test_app() -> AppView {
         pending_effects: Vec::new(),
         pending_editor_path: None,
         pending_agents_modal_refresh: None,
+        pending_prompt_editor_reload: false,
         pending_pager_path: None,
         pending_pager_ansi: false,
         minimal_state: crate::minimal_api::MinimalState::default(),

@@ -78,6 +78,34 @@ pub(super) fn dispatch_clear_prompt(app: &mut AppView) -> Vec<Effect> {
     vec![]
 }
 
+/// Suspend the TUI and open the active prompt draft in `$VISUAL` / `$EDITOR`.
+///
+/// Writes the current draft to a temp file, arms `pending_editor_path` +
+/// `pending_prompt_editor_reload`, and lets the event loop hand the tty to the
+/// editor. On exit the event loop reloads the file into the prompt.
+pub(super) fn dispatch_open_prompt_in_editor(app: &mut AppView) {
+    let mut text = None;
+    with_active_agent(app, |agent| {
+        text = Some(agent.prompt.text().to_string());
+    });
+    let Some(text) = text else {
+        return;
+    };
+    let path = std::env::temp_dir().join(format!("grok-prompt-{}.md", uuid::Uuid::new_v4()));
+    match std::fs::write(&path, text) {
+        Ok(()) => {
+            app.pending_editor_path = Some(path);
+            app.pending_agents_modal_refresh = None;
+            app.pending_prompt_editor_reload = true;
+        }
+        Err(e) => {
+            with_active_agent(app, |agent| {
+                agent.show_toast(&format!("Failed to open prompt in editor: {e}"));
+            });
+        }
+    }
+}
+
 /// Open the prompt-history search panel on the active agent (composer as
 /// filter query). Dispatched by `/history`; the slash pipeline has already
 /// cleared the composer, so the panel opens with an empty query.

@@ -514,7 +514,7 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             hint_key_display: None,
             requires_confirmation: false,
             long_help: Some(
-                "Shows or hides the tasks pane, which lists background tasks and their status.\nUse it to monitor or return to work you sent to the background with Ctrl+G.\nA side pane; toggle off to reclaim width.",
+                "Shows or hides the tasks pane, which lists background tasks and their status.\nUse it to monitor or return to work you sent to the background with Ctrl+G from the scrollback (prompt-focused Ctrl+G edits the draft in $EDITOR).\nA side pane; toggle off to reclaim width.",
             ),
         },
         ActionDef {
@@ -592,7 +592,7 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             hint_key_display: None,
             requires_confirmation: false,
             long_help: Some(
-                "Detaches the running turn so it keeps working in the background while you read, queue prompts, or start something else.\nTrack and resume it from the tasks pane (Ctrl+B).\nOnly meaningful while a turn is actually running.",
+                "Detaches a running shell tool so it keeps working in the background while you read, queue prompts, or start something else.\nBound to Ctrl+G when the scrollback is focused (prompt-focused Ctrl+G opens the draft in $EDITOR instead). Track and resume it from the tasks pane (Ctrl+B).\nOnly meaningful while a shell tool is actually running.",
             ),
         },
         // ── Prompt ───────────────────────────────────────────────────
@@ -698,6 +698,23 @@ pub fn default_actions(mouse_reporting_toggle_enabled: bool) -> Vec<ActionDef> {
             requires_confirmation: false,
             long_help: Some(
                 "Runs a shell command without leaving the chat: type ! at the start of an empty prompt, then the command.\nThe command output is captured into the scrollback.\nDelete the leading ! to go back to a normal prompt.",
+            ),
+        },
+        ActionDef {
+            id: ActionId::OpenPromptInEditor,
+            label: "editor",
+            description: "Edit prompt in $EDITOR",
+            // Prompt-focused only: when scrollback is focused, Ctrl+G still
+            // demotes a running shell tool (SendToBackground / bg button).
+            default_key: key!('g', CONTROL),
+            alt_keys: vec![],
+            category: Category::Input,
+            context: When::PromptFocused,
+            hint_priority: None,
+            hint_key_display: None,
+            requires_confirmation: false,
+            long_help: Some(
+                "Suspends the TUI and opens the current prompt draft in $VISUAL or $EDITOR (falls back to vi).\nSave and quit the editor to load the result back into the prompt; image chips in the draft are preserved when their [Image #N] placeholders remain.\nWhile a shell tool is running, focus the scrollback and press Ctrl+G (or use the bg button) to send that task to the background instead.",
             ),
         },
         // ── Agent ────────────────────────────────────────────────────

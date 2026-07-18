@@ -47,7 +47,7 @@ Use `kill_command_or_subagent(task_id)` to terminate a running background task o
 
 ## Send a Running Task to the Background
 
-In the interactive TUI, press `Ctrl+G` to send the running foreground command to the background. Do this when:
+In the interactive TUI, focus the **scrollback** (not the prompt) and press `Ctrl+G` to send the running foreground command to the background. (With the prompt focused, `Ctrl+G` opens the draft in `$EDITOR` instead.) Do this when:
 
 - A command takes longer than expected.
 - You want to ask the agent something else while a command runs.

@@ -4446,6 +4446,7 @@ fn dashboard_action_for_id(
         | ActionId::SendToBackground
         | ActionId::CycleMode
         | ActionId::BashMode
+        | ActionId::OpenPromptInEditor
         | ActionId::Rewind
         | ActionId::KillBgTask
         | ActionId::DumpInputLog

@@ -562,6 +562,7 @@ fn run_pending_suspends(
     // $EDITOR suspend: leave alt screen, disable raw mode, spawn
     // editor, wait for exit, then restore.
     if let Some(path) = app.pending_editor_path.take() {
+        let reload_prompt = std::mem::take(&mut app.pending_prompt_editor_reload);
         let editor = std::env::var("VISUAL")
             .or_else(|_| std::env::var("EDITOR"))
             .unwrap_or_else(|_| "vi".to_string());
@@ -572,11 +573,24 @@ fn run_pending_suspends(
             reader_parked,
             input_rx,
             || {
-                let _ = std::process::Command::new(&editor).arg(&path).status();
+                // $EDITOR may carry flags (e.g. "code -w"); split on
+                // whitespace so program + args are both honored, matching
+                // the $PAGER path below.
+                let mut parts = editor.split_whitespace();
+                if let Some(prog) = parts.next() {
+                    let mut cmd = std::process::Command::new(prog);
+                    for arg in parts {
+                        cmd.arg(arg);
+                    }
+                    let _ = cmd.arg(&path).status();
+                }
             },
         ) {
             Ok(moved_cursor) => moved_cursor,
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                // Re-arm the reload flag with the path so the next attempt
+                // still knows this was a Ctrl+G prompt edit.
+                app.pending_prompt_editor_reload = reload_prompt;
                 requeue_after_suspend_timeout(&mut app.pending_editor_path, path);
                 let first_timeout = defer_suspend_retry(
                     suspend_retry_after,
@@ -591,7 +605,33 @@ fn run_pending_suspends(
             }
             Err(error) => return Err(error.into()),
         };
-        if let Some(tab) = app.pending_agents_modal_refresh.take()
+        if reload_prompt {
+            // Ctrl+G open-prompt: load the edited file back into the draft
+            // and remove the temp file. Preserve image chips when their
+            // `[Image #N]` placeholders remain in the text.
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    // Many editors force a trailing newline; strip one so a
+                    // single-line draft doesn't grow a blank line every open.
+                    let content = content.strip_suffix('\n').unwrap_or(&content);
+                    let content = content.strip_suffix('\r').unwrap_or(content);
+                    if let ActiveView::Agent(id) = app.active_view
+                        && let Some(agent) = app.agents.get_mut(&id)
+                    {
+                        agent.prompt.set_text(content);
+                        agent.set_active_pane(crate::app::agent_view::AgentPane::Prompt, false);
+                    }
+                }
+                Err(e) => {
+                    if let ActiveView::Agent(id) = app.active_view
+                        && let Some(agent) = app.agents.get_mut(&id)
+                    {
+                        agent.show_toast(&format!("Failed to read edited prompt: {e}"));
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&path);
+        } else if let Some(tab) = app.pending_agents_modal_refresh.take()
             && let ActiveView::Agent(id) = app.active_view
             && let Some(agent) = app.agents.get_mut(&id)
             && let Some(ref mut modal) = agent.agents_modal
