@@ -641,6 +641,11 @@ pub enum ToolOutput {
     SubagentCompleted(SubagentCompletedOutput),
     EnterPlanMode(EnterPlanModeOutput),
     ExitPlanMode(ExitPlanModeOutput),
+    EnterDebugMode(EnterDebugModeOutput),
+    ExitDebugMode(ExitDebugModeOutput),
+    AwaitDebugReproduction(AwaitDebugReproductionOutput),
+    AwaitDebugVerification(AwaitDebugVerificationOutput),
+    ReadDebugLogs(ReadDebugLogsOutput),
     AskUserQuestion(AskUserQuestionOutput),
     Monitor(crate::implementations::grok_build::monitor::types::MonitorOutput),
     SchedulerCreate(crate::implementations::grok_build::scheduler::create::SchedulerCreateOutput),
@@ -939,6 +944,61 @@ impl ToolOutput {
                 }
                 ExitPlanModeOutput::EmptyPlan { message, .. } => message.clone(),
             },
+            ToolOutput::EnterDebugMode(EnterDebugModeOutput::Entered {
+                message,
+                debug_log_path,
+                debug_scratch_path,
+                tool_hints,
+                ..
+            }) => {
+                let await_repro = &tool_hints.await_repro;
+                let await_verify = &tool_hints.await_verify;
+                let read_logs = &tool_hints.read_logs;
+                let exit_debug = &tool_hints.exit_debug;
+                let ask = &tool_hints.ask_user;
+                let task_hint = if tool_hints.task.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\n     You can use the {} tool with subagent_type=\"explore\" to \
+                         parallelize codebase exploration.",
+                        tool_hints.task
+                    )
+                };
+                format!(
+                    "{message}\n\n\
+                     NDJSON debug log: {debug_log_path}\n\
+                     Scratch (hypotheses/findings): {debug_scratch_path}\n\n\
+                     In debug mode, you should:\n\
+                     1. Thoroughly explore the codebase{task_hint}\n\
+                     2. Write 3–5 labeled hypotheses (A/B/C…) into the scratch file\n\
+                     3. Instrument with tagged `#region agent log` regions that append NDJSON to the log path\n\
+                     4. Call {await_repro} with concrete reproduction steps\n\
+                     5. After Proceed: use {read_logs} (or read the log file), classify hypotheses, apply a minimal fix (keep logs)\n\
+                     6. Call {await_verify}\n\
+                     7. On Mark Fixed: strip all agent-log regions, then {exit_debug}\n\
+                     8. Use {ask} only for clarifying questions — do not skip human Proceed/Verify gates"
+                )
+            }
+            ToolOutput::ExitDebugMode(ExitDebugModeOutput::Exited { message, .. }) => {
+                message.clone()
+            }
+            ToolOutput::AwaitDebugReproduction(AwaitDebugReproductionOutput::Waiting {
+                message,
+                ..
+            })
+            | ToolOutput::AwaitDebugVerification(AwaitDebugVerificationOutput::Waiting {
+                message,
+                ..
+            }) => message.clone(),
+            ToolOutput::ReadDebugLogs(logs) => match logs {
+                ReadDebugLogsOutput::Events {
+                    message,
+                    events_ndjson,
+                    ..
+                } => format!("{message}\n\n{events_ndjson}"),
+                ReadDebugLogsOutput::Empty { message, .. } => message.clone(),
+            },
             ToolOutput::AskUserQuestion(
                 AskUserQuestionOutput::QuestionsSent { message, .. }
                 | AskUserQuestionOutput::UserAnswered { message },
@@ -1044,6 +1104,142 @@ impl Default for PlanFileSeedStatus {
         Self::Missing(PlanFileSeedFailure::NotCreated)
     }
 }
+/// Probe / seed outcome for debug artifacts (`debug.log` / `debug.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DebugFileSeedFailure {
+    NotCreated,
+    NotAFile,
+    Inaccessible,
+    Unavailable,
+}
+
+/// Result of probing / seeding a debug session artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DebugFileSeedStatus {
+    Missing(DebugFileSeedFailure),
+    Empty,
+    NonEmpty,
+}
+
+impl Default for DebugFileSeedStatus {
+    fn default() -> Self {
+        Self::Missing(DebugFileSeedFailure::NotCreated)
+    }
+}
+
+/// Output from the `EnterDebugMode` tool.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum EnterDebugModeOutput {
+    Entered {
+        message: String,
+        debug_log_path: String,
+        debug_scratch_path: String,
+        #[serde(default)]
+        tool_hints: EnterDebugModeToolHints,
+        #[serde(default)]
+        debug_log_seed: DebugFileSeedStatus,
+        #[serde(default)]
+        debug_scratch_seed: DebugFileSeedStatus,
+    },
+}
+
+/// Pre-resolved tool name hints embedded in `EnterDebugModeOutput`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct EnterDebugModeToolHints {
+    #[serde(default = "EnterDebugModeToolHints::default_await_repro")]
+    pub await_repro: String,
+    #[serde(default = "EnterDebugModeToolHints::default_await_verify")]
+    pub await_verify: String,
+    #[serde(default = "EnterDebugModeToolHints::default_read_logs")]
+    pub read_logs: String,
+    #[serde(default = "EnterDebugModeToolHints::default_exit_debug")]
+    pub exit_debug: String,
+    #[serde(default = "EnterDebugModeToolHints::default_ask_user")]
+    pub ask_user: String,
+    #[serde(default)]
+    pub task: String,
+}
+
+impl Default for EnterDebugModeToolHints {
+    fn default() -> Self {
+        Self {
+            await_repro: Self::default_await_repro(),
+            await_verify: Self::default_await_verify(),
+            read_logs: Self::default_read_logs(),
+            exit_debug: Self::default_exit_debug(),
+            ask_user: Self::default_ask_user(),
+            task: String::new(),
+        }
+    }
+}
+
+impl EnterDebugModeToolHints {
+    fn default_await_repro() -> String {
+        "await_debug_reproduction".to_owned()
+    }
+    fn default_await_verify() -> String {
+        "await_debug_verification".to_owned()
+    }
+    fn default_read_logs() -> String {
+        "read_debug_logs".to_owned()
+    }
+    fn default_exit_debug() -> String {
+        "exit_debug_mode".to_owned()
+    }
+    fn default_ask_user() -> String {
+        "ask_user_question".to_owned()
+    }
+}
+
+/// Output from the `ExitDebugMode` tool.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ExitDebugModeOutput {
+    Exited {
+        message: String,
+        debug_log_path: String,
+    },
+}
+
+/// Output from `await_debug_reproduction` (shell HITL may replace the message).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum AwaitDebugReproductionOutput {
+    Waiting {
+        message: String,
+        run_id: String,
+        debug_log_path: String,
+        steps: String,
+    },
+}
+
+/// Output from `await_debug_verification` (shell HITL may replace the message).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum AwaitDebugVerificationOutput {
+    Waiting {
+        message: String,
+        run_id: String,
+        debug_log_path: String,
+        summary: String,
+    },
+}
+
+/// Output from `read_debug_logs`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ReadDebugLogsOutput {
+    Events {
+        message: String,
+        debug_log_path: String,
+        event_count: usize,
+        events_ndjson: String,
+    },
+    Empty {
+        message: String,
+        debug_log_path: String,
+        event_count: usize,
+    },
+}
+
 /// Output from the `EnterPlanMode` tool.
 ///
 /// Confirms plan mode entry and reports session plan-file seed status.
@@ -1268,6 +1464,11 @@ impl xai_tool_runtime::ToolOutput for CodexGrepFilesOutput {}
 impl xai_tool_runtime::ToolOutput for SearchToolOutput {}
 impl xai_tool_runtime::ToolOutput for EnterPlanModeOutput {}
 impl xai_tool_runtime::ToolOutput for ExitPlanModeOutput {}
+impl xai_tool_runtime::ToolOutput for EnterDebugModeOutput {}
+impl xai_tool_runtime::ToolOutput for ExitDebugModeOutput {}
+impl xai_tool_runtime::ToolOutput for AwaitDebugReproductionOutput {}
+impl xai_tool_runtime::ToolOutput for AwaitDebugVerificationOutput {}
+impl xai_tool_runtime::ToolOutput for ReadDebugLogsOutput {}
 impl xai_tool_runtime::ToolOutput for AskUserQuestionOutput {}
 impl xai_tool_runtime::ToolOutput for MCPOutput {}
 #[cfg(test)]
