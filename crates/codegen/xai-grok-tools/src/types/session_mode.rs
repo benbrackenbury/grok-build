@@ -6,14 +6,17 @@
 //! instead of by ad-hoc string matching at each boundary.
 
 /// Wire representation is the snake-cased variant name (`default`, `plan`,
-/// `ask`) via [`strum`]. Unknown ids parse back to [`SessionMode::Default`]
-/// so newer modes added on the agent side don't brick older pagers.
+/// `ask`, `debug`) via [`strum`]. Unknown ids parse back to
+/// [`SessionMode::Default`] so newer modes added on the agent side don't
+/// brick older pagers.
 #[derive(Debug, Clone, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum SessionMode {
     Default,
     Plan,
     Ask,
+    /// Runtime instrumentation / hypothesis debug loop (Cursor-style Debug Mode).
+    Debug,
 }
 
 impl SessionMode {
@@ -30,6 +33,10 @@ impl SessionMode {
     pub fn is_plan(&self) -> bool {
         matches!(self, Self::Plan)
     }
+
+    pub fn is_debug(&self) -> bool {
+        matches!(self, Self::Debug)
+    }
 }
 
 #[cfg(test)]
@@ -38,7 +45,7 @@ mod tests {
 
     #[test]
     fn round_trip_known_ids() {
-        for &id in &["default", "plan", "ask"] {
+        for &id in &["default", "plan", "ask", "debug"] {
             let mode = SessionMode::from_id(id);
             assert_eq!(mode.as_id(), id, "round-trip failed for {id}");
         }
@@ -56,5 +63,14 @@ mod tests {
         assert!(SessionMode::Plan.is_plan());
         assert!(!SessionMode::Default.is_plan());
         assert!(!SessionMode::Ask.is_plan());
+        assert!(!SessionMode::Debug.is_plan());
+    }
+
+    #[test]
+    fn is_debug_only_for_debug_variant() {
+        assert!(SessionMode::Debug.is_debug());
+        assert!(!SessionMode::Default.is_debug());
+        assert!(!SessionMode::Plan.is_debug());
+        assert!(!SessionMode::Ask.is_debug());
     }
 }

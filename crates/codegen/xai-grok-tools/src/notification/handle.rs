@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use super::types::{
     BashExecutionBackgrounded, BashExecutionComplete, BashExecutionFailed, BashExecutionTimeout,
-    BashOutputChunk, FileWritten, LspServerCrashed, LspServerFailed, LspServerReady,
-    LspServerRetrying, LspServerStarting, MonitorEvent, PlanModeEntered, PlanModeExited,
-    ScheduledTaskCreated, ScheduledTaskFired, ScheduledTaskRemoved, ToolNotification,
-    UserQuestionAsked,
+    BashOutputChunk, DebugModeEntered, DebugModeExited, FileWritten, LspServerCrashed,
+    LspServerFailed, LspServerReady, LspServerRetrying, LspServerStarting, MonitorEvent,
+    PlanModeEntered, PlanModeExited, ScheduledTaskCreated, ScheduledTaskFired,
+    ScheduledTaskRemoved, ToolNotification, UserQuestionAsked,
 };
 use crate::types::TaskSnapshot;
 
@@ -242,6 +242,8 @@ impl ToolNotificationHandle {
         send_task_complete, TaskSnapshot, TaskCompleted;
         send_plan_mode_entered, PlanModeEntered, PlanModeEntered;
         send_plan_mode_exited, PlanModeExited, PlanModeExited;
+        send_debug_mode_entered, DebugModeEntered, DebugModeEntered;
+        send_debug_mode_exited, DebugModeExited, DebugModeExited;
         send_user_question_asked, UserQuestionAsked, UserQuestionAsked;
         send_lsp_starting, LspServerStarting, LspServerStarting;
         send_lsp_ready, LspServerReady, LspServerReady;
