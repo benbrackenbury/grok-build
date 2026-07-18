@@ -740,6 +740,7 @@ impl AgentView {
             .current_model_name()
             .unwrap_or_else(|| "unknown".to_string());
         let effective_plan = self.plan_mode_pending.unwrap_or(self.plan_mode_active);
+        let effective_debug = self.debug_mode_pending.unwrap_or(self.debug_mode_active);
         let casual_commenting = self.is_casual_commenting();
         let prompt_focused = if self.plan_approval_view.is_some() {
             self.plan_approval_view
@@ -763,11 +764,15 @@ impl AgentView {
                 Some(c)
             } else if effective_plan || casual_commenting {
                 Some(theme.accent_plan)
+            } else if effective_debug {
+                Some(theme.accent_system)
             } else {
                 None
             },
             border_color_override: if effective_plan || casual_commenting {
                 crate::render::color::blend_color(theme.bg_base, theme.accent_plan, 0.4)
+            } else if effective_debug {
+                crate::render::color::blend_color(theme.bg_base, theme.accent_system, 0.4)
             } else {
                 None
             },
@@ -2173,15 +2178,35 @@ impl AgentView {
                 color: Some(theme.accent_plan),
                 bold: false,
             });
+        } else if self.debug_hitl_view.is_some() {
+            let label = self
+                .debug_hitl_view
+                .as_ref()
+                .map(|v| match v.kind {
+                    crate::views::debug_hitl_view::DebugHitlKind::Reproduction => "debug: proceed",
+                    crate::views::debug_hitl_view::DebugHitlKind::Verification => "debug: verify",
+                })
+                .unwrap_or("debug");
+            mode_flags_vec.push(PromptFlag {
+                text: label,
+                color: Some(theme.accent_system),
+                bold: true,
+            });
+        } else if effective_debug {
+            mode_flags_vec.push(PromptFlag {
+                text: "debug",
+                color: Some(theme.accent_system),
+                bold: false,
+            });
         }
-        if self.session.is_yolo() && !effective_plan {
+        if self.session.is_yolo() && !effective_plan && !effective_debug {
             mode_flags_vec.push(PromptFlag {
                 text: "always-approve",
                 color: None,
                 bold: false,
             });
         }
-        if self.auto_flag_visible(effective_plan) {
+        if self.auto_flag_visible(effective_plan || effective_debug) {
             mode_flags_vec.push(PromptFlag {
                 text: "auto",
                 color: Some(theme.accent_system),

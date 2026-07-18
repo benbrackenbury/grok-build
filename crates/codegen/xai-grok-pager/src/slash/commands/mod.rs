@@ -40,6 +40,7 @@ pub mod model;
 pub mod multiline;
 pub mod new;
 pub mod personas;
+pub mod debug_mode;
 pub mod plan;
 pub mod plugin;
 pub mod privacy;
@@ -111,6 +112,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(announcements::AnnouncementsCommand),
         Arc::new(remember::RememberCommand),
         Arc::new(plan::PlanCommand),
+        Arc::new(debug_mode::DebugModeCommand),
         Arc::new(view_plan::ViewPlanCommand),
         Arc::new(resume::ResumeCommand),
         Arc::new(mcps::McpsCommand),
