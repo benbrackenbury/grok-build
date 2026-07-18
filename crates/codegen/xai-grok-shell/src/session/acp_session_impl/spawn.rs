@@ -615,6 +615,12 @@ pub(crate) async fn spawn_session_actor(
         Arc::new(parking_lot::Mutex::new(tracker))
     };
     let goal_was_restored = persisted_goal_mode.is_some();
+    let debug_mode = {
+        let session_dir = crate::session::persistence::session_dir(&session_info);
+        // Resume from disk when available (optional field on PersistedData later).
+        let tracker = crate::session::debug_mode::DebugModeTracker::new(session_dir);
+        Arc::new(parking_lot::Mutex::new(tracker))
+    };
     let goal_tracker = {
         let session_dir = crate::session::persistence::session_dir(&session_info);
         let tracker = if let Some(snapshot) = persisted_goal_mode {
@@ -641,6 +647,7 @@ pub(crate) async fn spawn_session_actor(
             persistence: persistence.clone(),
             incremental_bash_output,
             plan_mode: plan_mode.clone(),
+            debug_mode: debug_mode.clone(),
             current_prompt_mode: current_prompt_mode.clone(),
             turn_prompt_mode: turn_prompt_mode.clone(),
             session_cmd_tx: cmd_tx.clone(),
@@ -1657,6 +1664,7 @@ pub(crate) async fn spawn_session_actor(
         turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),
         turn_prompt_mode: turn_prompt_mode.clone(),
         plan_mode: plan_mode.clone(),
+        debug_mode: debug_mode.clone(),
         goal_enabled,
         background_workflows_enabled,
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(if background_workflows_enabled {
@@ -1817,6 +1825,22 @@ pub(crate) async fn spawn_session_actor(
             .borrow()
             .tool_bridge()
             .update_resource(xai_grok_tools::types::resources::PlanFilePath(plan_path))
+            .await;
+    }
+    {
+        let debug_log = session.debug_mode.lock().debug_log_path().to_path_buf();
+        let debug_scratch = session.debug_mode.lock().debug_scratch_path().to_path_buf();
+        session
+            .agent
+            .borrow()
+            .tool_bridge()
+            .update_resource(xai_grok_tools::types::resources::DebugLogPath(debug_log))
+            .await;
+        session
+            .agent
+            .borrow()
+            .tool_bridge()
+            .update_resource(xai_grok_tools::types::resources::DebugScratchPath(debug_scratch))
             .await;
     }
     session.inject_deny_read_globs().await;
@@ -2091,6 +2115,7 @@ pub(crate) async fn spawn_session_actor(
             code_nav_enabled,
             ask_user_question_enabled,
             plan_mode: plan_mode.clone(),
+            debug_mode: debug_mode.clone(),
             force_compact,
             permission_handle: permissions_for_handle,
             attribution_callback: attribution_callback_for_handle,
