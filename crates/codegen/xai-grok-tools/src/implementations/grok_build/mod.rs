@@ -9,12 +9,17 @@
 //! the standard toolset. It inserts shared resources (`Terminal`,
 //! `AvailableSkills`, `BashParams`) and registers every built-in tool.
 pub mod ask_user_question;
+pub mod await_debug_reproduction;
+pub mod await_debug_verification;
 pub mod bash;
 #[path = "deploy_app_stub.rs"]
 pub mod deploy_app;
+pub mod enter_debug_mode;
 pub mod enter_plan_mode;
+pub mod exit_debug_mode;
 pub mod exit_plan_mode;
 pub mod grep;
+pub mod read_debug_logs;
 pub mod image_edit;
 pub mod image_gen;
 pub mod kill_task;
@@ -34,11 +39,16 @@ pub mod web_fetch;
 pub mod web_search;
 pub mod workflow;
 pub use ask_user_question::AskUserQuestionTool;
+pub use await_debug_reproduction::AwaitDebugReproductionTool;
+pub use await_debug_verification::AwaitDebugVerificationTool;
 pub use bash::BashTool;
 pub use deploy_app::{AppBuilderDeployerConfig, DEPLOY_APP_TOOL_NAME};
+pub use enter_debug_mode::EnterDebugModeTool;
 pub use enter_plan_mode::EnterPlanModeTool;
+pub use exit_debug_mode::ExitDebugModeTool;
 pub use exit_plan_mode::ExitPlanModeTool;
 pub use grep::GrepTool;
+pub use read_debug_logs::ReadDebugLogsTool;
 pub use image_edit::{IMAGE_EDIT_TOOL_NAME, ImageEditTool};
 pub use image_gen::{
     IMAGE_GEN_TOOL_NAME, IMAGINE_COMMAND_NAME, ImageGenTool, imagine_instruction,
