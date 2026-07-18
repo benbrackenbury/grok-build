@@ -411,9 +411,25 @@ pub struct Cwd(pub PathBuf);
 /// tool falls back to `Cwd/.grok/plan.md`.
 #[derive(Debug, Clone)]
 pub struct PlanFilePath(pub PathBuf);
+/// Absolute path to the session NDJSON debug log.
+///
+/// Set by the session layer (from `DebugModeTracker::debug_log_path()`);
+/// read by debug-mode tools. When absent tools fall back to
+/// `Cwd/.grok/debug.log`.
+#[derive(Debug, Clone)]
+pub struct DebugLogPath(pub PathBuf);
+/// Absolute path to the session debug scratch markdown (`debug.md`).
+///
+/// Holds hypotheses table, repro steps, and findings during a debug session.
+#[derive(Debug, Clone)]
+pub struct DebugScratchPath(pub PathBuf);
 /// Default plan-file path (relative to the workspace root) used when no
 /// explicit [`PlanFilePath`] is set. Shared by the plan-mode tools.
 pub const PLAN_FILE_RELATIVE_PATH: &str = ".grok/plan.md";
+/// Default debug log path (relative to workspace) when no [`DebugLogPath`] is set.
+pub const DEBUG_LOG_RELATIVE_PATH: &str = ".grok/debug.log";
+/// Default debug scratch path (relative to workspace) when no [`DebugScratchPath`] is set.
+pub const DEBUG_SCRATCH_RELATIVE_PATH: &str = ".grok/debug.md";
 /// Resolve the session plan-file path from resources as `(absolute_target, display)`.
 ///
 /// `absolute_target` is `Some` ONLY when the resolved path is absolute, so
@@ -445,6 +461,49 @@ pub(crate) fn require_plan_file_path(
         )
     })?;
     Ok((target, display))
+}
+/// Resolve the session debug log path as `(absolute_target, display)`.
+///
+/// Resolution: [`DebugLogPath`] (as-is), else [`Cwd`]`/.grok/debug.log`, else
+/// the bare relative `.grok/debug.log`.
+pub(crate) fn resolve_debug_log_path(res: &Resources) -> (Option<PathBuf>, String) {
+    let path = if let Some(configured) = res.get::<DebugLogPath>() {
+        configured.0.clone()
+    } else if let Some(cwd) = res.get::<Cwd>() {
+        cwd.0.join(DEBUG_LOG_RELATIVE_PATH)
+    } else {
+        PathBuf::from(DEBUG_LOG_RELATIVE_PATH)
+    };
+    let display = path.display().to_string();
+    let absolute_target = path.is_absolute().then_some(path);
+    (absolute_target, display)
+}
+/// Like [`resolve_debug_log_path`] but errors when no absolute target resolves.
+#[allow(dead_code)] // Used by exit/await tools when shell wiring needs strict path.
+pub(crate) fn require_debug_log_path(
+    res: &Resources,
+) -> Result<(PathBuf, String), xai_tool_runtime::ToolError> {
+    let (target, display) = resolve_debug_log_path(res);
+    let target = target.ok_or_else(|| {
+        xai_tool_runtime::ToolError::custom(
+            "missing_resource",
+            "missing required resource: DebugLogPath or an absolute Cwd",
+        )
+    })?;
+    Ok((target, display))
+}
+/// Resolve the session debug scratch (`debug.md`) path as `(absolute_target, display)`.
+pub(crate) fn resolve_debug_scratch_path(res: &Resources) -> (Option<PathBuf>, String) {
+    let path = if let Some(configured) = res.get::<DebugScratchPath>() {
+        configured.0.clone()
+    } else if let Some(cwd) = res.get::<Cwd>() {
+        cwd.0.join(DEBUG_SCRATCH_RELATIVE_PATH)
+    } else {
+        PathBuf::from(DEBUG_SCRATCH_RELATIVE_PATH)
+    };
+    let display = path.display().to_string();
+    let absolute_target = path.is_absolute().then_some(path);
+    (absolute_target, display)
 }
 /// Stable display path for forked sessions.
 ///
