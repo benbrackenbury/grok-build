@@ -243,6 +243,11 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                         "/tmp/test-session",
                     )),
                 )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
+                    )),
+                )),
                 goal_enabled: false,
                 goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
                 goal_harness_availability_reconciled: std::sync::atomic::AtomicBool::new(false),

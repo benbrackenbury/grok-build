@@ -1283,6 +1283,11 @@ fn dummy_tracker(
                 "/tmp/test-session",
             )),
         )),
+        ask_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                "/tmp/test-ask-session",
+            )),
+        )),
         force_compact: Arc::new(AtomicBool::new(false)),
         permission_handle: xai_grok_workspace::permission::PermissionHandle::allow_all(),
         attribution_callback: None,

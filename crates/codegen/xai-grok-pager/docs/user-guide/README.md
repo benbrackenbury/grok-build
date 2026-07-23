@@ -52,3 +52,5 @@ Automate, script, and integrate Grok Build with other systems.
 | 22 | [Permissions and Safety Controls](22-permissions-and-safety.md) | `dontAsk` mode, auto-approved tools, the safe-bash list, and restrictive PreToolUse hooks (such as git/gh-only) |
 | 23 | [Agent Dashboard](23-dashboard.md) | Central overview of local sessions and forks |
 | 24 | [Monitoring Usage (External OpenTelemetry)](24-monitoring-usage.md) | Customer OTEL export |
+| 25 | [Ask Mode](25-ask-mode.md) | Cursor-style read-only Q&A; explore without edits |
+| 26 | [Debug Mode](23-debug-mode.md) | Cursor-style hypothesize → instrument → reproduce → fix loop |

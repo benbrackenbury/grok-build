@@ -126,6 +126,9 @@ impl JsonlStorageAdapter {
     fn debug_mode_state_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("debug_mode.json")
     }
+    fn ask_mode_state_file(&self, info: &Info) -> PathBuf {
+        self.session_dir(info).join("ask_mode.json")
+    }
     fn signals_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join(super::SIGNALS_FILE)
     }
@@ -1209,6 +1212,18 @@ impl StorageAdapter for JsonlStorageAdapter {
         let json = serde_json::to_vec_pretty(state)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let target = self.debug_mode_state_file(info);
+        let tmp = target.with_extension("json.tmp");
+        tokio::fs::write(&tmp, json).await?;
+        tokio::fs::rename(&tmp, &target).await
+    }
+    async fn write_ask_mode_state(
+        &self,
+        info: &Info,
+        state: &crate::session::ask_mode::AskModeSnapshot,
+    ) -> io::Result<()> {
+        let json = serde_json::to_vec_pretty(state)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let target = self.ask_mode_state_file(info);
         let tmp = target.with_extension("json.tmp");
         tokio::fs::write(&tmp, json).await?;
         tokio::fs::rename(&tmp, &target).await

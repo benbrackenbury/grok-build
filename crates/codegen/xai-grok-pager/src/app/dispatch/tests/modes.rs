@@ -1130,12 +1130,12 @@ fn set_yolo_mode_off_allowed_under_policy_pin() {
     ));
 }
 
-/// Shift+Tab cycle: Plan → Auto (always-approve is a later step).
-/// Plan exit is pushed; PersistPermissionMode(auto) notifies the agent.
+/// Shift+Tab cycle: Debug → Auto (always-approve is a later step).
+/// Debug exit is pushed; PersistPermissionMode(auto) notifies the agent.
 #[test]
-fn cycle_mode_plan_to_auto_includes_persist_auto() {
+fn cycle_mode_debug_to_auto_includes_persist_auto() {
     let mut app = test_app_with_agent();
-    app.agents.get_mut(&AgentId(0)).unwrap().plan_mode_pending = Some(true);
+    app.agents.get_mut(&AgentId(0)).unwrap().debug_mode_pending = Some(true);
 
     let effects = dispatch(Action::CycleMode, &mut app);
 
@@ -1143,7 +1143,7 @@ fn cycle_mode_plan_to_auto_includes_persist_auto() {
         !app.agents[&AgentId(0)].session.is_yolo(),
         "auto mode must not enable yolo"
     );
-    assert_eq!(app.agents[&AgentId(0)].plan_mode_pending, Some(false));
+    assert_eq!(app.agents[&AgentId(0)].debug_mode_pending, Some(false));
     assert_eq!(app.current_ui.permission_mode.as_deref(), Some("auto"));
     assert!(
         effects.iter().any(|e| matches!(
@@ -1159,25 +1159,25 @@ fn cycle_mode_plan_to_auto_includes_persist_auto() {
         effects
             .iter()
             .any(|e| matches!(e, Effect::SetSessionMode { .. })),
-        "expected plan exit SetSessionMode, got {effects:?}"
+        "expected debug exit SetSessionMode, got {effects:?}"
     );
 }
 
-/// Feature gate OFF: the Shift+Tab cycle skips Auto entirely — Plan jumps
+/// Feature gate OFF: the Shift+Tab cycle skips Auto entirely — Debug jumps
 /// straight to Always-Approve (legacy cycle), and "auto" is never persisted.
 /// Drives the real `dispatch_cycle_mode` with `auto_mode_gate = false`.
 #[test]
-fn cycle_mode_plan_to_always_approve_when_auto_gated_off() {
+fn cycle_mode_debug_to_always_approve_when_auto_gated_off() {
     let mut app = test_app_with_agent();
     app.auto_mode_gate = false;
-    app.agents.get_mut(&AgentId(0)).unwrap().plan_mode_pending = Some(true);
+    app.agents.get_mut(&AgentId(0)).unwrap().debug_mode_pending = Some(true);
 
     let effects = dispatch(Action::CycleMode, &mut app);
 
     assert_eq!(
         app.current_ui.permission_mode.as_deref(),
         Some("always-approve"),
-        "gate OFF: Plan must skip Auto and land on Always-Approve"
+        "gate OFF: Debug must skip Auto and land on Always-Approve"
     );
     assert!(
         effects.iter().any(|e| matches!(
@@ -1231,13 +1231,13 @@ fn cycle_mode_auto_to_always_approve_blocked_by_policy_pin() {
     assert_eq!(agent_toast(&app).as_deref(), Some(POLICY_WARNING));
 }
 
-/// Legacy name kept for callers; Plan no longer jumps straight to Always-Approve.
+/// Legacy name kept for callers; Debug no longer jumps straight to Always-Approve.
 #[test]
 fn cycle_mode_plan_to_always_approve_blocked_by_policy_pin() {
-    // With Auto inserted, Plan → Auto first; pin is irrelevant on this step.
+    // With Auto inserted, Debug → Auto first; pin is irrelevant on this step.
     let mut app = test_app_with_agent();
     app.yolo_policy_block = Some(POLICY_WARNING);
-    app.agents.get_mut(&AgentId(0)).unwrap().plan_mode_pending = Some(true);
+    app.agents.get_mut(&AgentId(0)).unwrap().debug_mode_pending = Some(true);
 
     let effects = dispatch(Action::CycleMode, &mut app);
 
@@ -1252,13 +1252,13 @@ fn cycle_mode_plan_to_always_approve_blocked_by_policy_pin() {
     )));
 }
 
-/// Plan active while already in Auto: Shift+Tab follows Plan → Auto —
-/// exit Plan but KEEP the classifier. Must NOT fall to the `_` reset that
-/// clears auto back to ask (regression: Plan plus Auto cycle wrong).
+/// Plan active while already in Auto: Shift+Tab exits Plan but KEEP the
+/// classifier (special+Auto arm). Must NOT fall to Plan→Debug or the `_` reset.
 #[test]
 fn cycle_mode_plan_plus_auto_keeps_auto_not_reset() {
     let mut app = test_app_with_agent();
     app.current_ui.permission_mode = Some("auto".into());
+    app.agents.get_mut(&AgentId(0)).unwrap().session.auto_mode = true;
     app.agents.get_mut(&AgentId(0)).unwrap().plan_mode_pending = Some(true);
 
     let effects = dispatch(Action::CycleMode, &mut app);
@@ -1351,22 +1351,22 @@ fn cycle_mode_pre_session_always_approve_to_normal_persists_ask() {
     );
 }
 
-/// Negative control for the pre-session persist: Normal → Plan changes the
+/// Negative control for the pre-session persist: Normal → Ask changes the
 /// SESSION mode, not the permission mode — nothing to write to
-/// `ui.permission_mode` (matches the with-session Normal → Plan arm).
+/// `ui.permission_mode` (matches the with-session Normal → Ask arm).
 #[test]
-fn cycle_mode_pre_session_normal_to_plan_does_not_persist_permission_mode() {
+fn cycle_mode_pre_session_normal_to_ask_does_not_persist_permission_mode() {
     let mut app = test_app_with_agent();
     app.agents.get_mut(&AgentId(0)).unwrap().session.session_id = None;
 
     let effects = dispatch(Action::CycleMode, &mut app);
 
-    assert_eq!(app.agents[&AgentId(0)].plan_mode_pending, Some(true));
+    assert_eq!(app.agents[&AgentId(0)].ask_mode_pending, Some(true));
     assert!(
         !effects
             .iter()
             .any(|e| matches!(e, Effect::PersistPermissionMode { .. })),
-        "Normal → Plan must not touch the persisted permission mode, got {effects:?}"
+        "Normal → Ask must not touch the persisted permission mode, got {effects:?}"
     );
 }
 
@@ -1670,32 +1670,37 @@ fn permission_mode_toast_returns_brand_consistent_strings() {
     );
 }
 
-/// Normal → Plan: cycle_mode requests plan_mode_pending but does
+/// Normal → Ask: cycle_mode requests ask_mode_pending but does
 /// NOT touch YOLO state. Pins the no-yolo-mutation invariant.
 #[test]
-fn dispatch_cycle_mode_normal_to_plan_does_not_touch_yolo() {
+fn dispatch_cycle_mode_normal_to_ask_does_not_touch_yolo() {
     let mut app = test_app_with_agent();
     assert!(!app.agents[&AgentId(0)].session.is_yolo());
 
     let effects = dispatch(Action::CycleMode, &mut app);
 
-    // Plan mode requested.
+    // Ask mode requested.
+    assert_eq!(
+        app.agents[&AgentId(0)].ask_mode_pending,
+        Some(true),
+        "Normal → Ask must set ask_mode_pending"
+    );
     assert_eq!(
         app.agents[&AgentId(0)].plan_mode_pending,
-        Some(true),
-        "Normal → Plan must set plan_mode_pending"
+        Some(false),
+        "Normal → Ask must clear plan pending"
     );
     // YOLO state unchanged.
     assert!(
         !app.agents[&AgentId(0)].session.is_yolo(),
-        "Normal → Plan must NOT flip YOLO state",
+        "Normal → Ask must NOT flip YOLO state",
     );
     assert!(!app.default_yolo, "app.default_yolo must remain false");
     // Single effect: SetSessionMode (no PersistPermissionMode).
-    assert_eq!(effects.len(), 1, "Normal → Plan must emit one effect");
+    assert_eq!(effects.len(), 1, "Normal → Ask must emit one effect");
     assert!(
         matches!(effects[0], Effect::SetSessionMode { .. }),
-        "Normal → Plan effect must be SetSessionMode, got {:?}",
+        "Normal → Ask effect must be SetSessionMode, got {:?}",
         effects[0],
     );
 }
@@ -1750,7 +1755,7 @@ fn cycle_into_plan_with_nudge_showing_accepts_and_retires_nudge() {
 /// not "any tip". With no telemetry sink this pins plan-entry + keyed-clear
 /// correctness, not the emit-gating itself.
 #[test]
-fn cycle_into_plan_without_nudge_leaves_other_tip_intact() {
+fn cycle_into_ask_without_nudge_leaves_other_tip_intact() {
     let mut app = test_app_with_agent();
     let _ = app.agents.get_mut(&AgentId(0)).unwrap().ephemeral_tip.show(
         crate::tips::clipboard_focus::clipboard_image_tip(),
@@ -1760,9 +1765,9 @@ fn cycle_into_plan_without_nudge_leaves_other_tip_intact() {
     let _ = dispatch(Action::CycleMode, &mut app);
 
     assert_eq!(
-        app.agents[&AgentId(0)].plan_mode_pending,
+        app.agents[&AgentId(0)].ask_mode_pending,
         Some(true),
-        "shift+tab still enters plan mode"
+        "shift+tab still enters ask mode"
     );
     assert_eq!(
         app.agents[&AgentId(0)].ephemeral_tip.current_key(),

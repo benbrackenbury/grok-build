@@ -1765,14 +1765,14 @@ fn dispatch_cycle_mode_pre_session_cycles_locally_and_creates_session() {
     let effects = dispatch(Action::CycleMode, &mut app);
     let agent = &app.agents[&AgentId(0)];
     assert_eq!(
-        agent.plan_mode_pending,
+        agent.ask_mode_pending,
         Some(true),
-        "pre-session Normal → Plan must set optimistic pending"
+        "pre-session Normal → Ask must set optimistic pending"
     );
     assert_eq!(
         agent.deferred_session_mode,
-        Some(xai_grok_tools::types::SessionMode::Plan),
-        "Plan must be deferred to SessionCreated"
+        Some(xai_grok_tools::types::SessionMode::Ask),
+        "Ask must be deferred to SessionCreated"
     );
     assert!(
         effects
@@ -1782,16 +1782,39 @@ fn dispatch_cycle_mode_pre_session_cycles_locally_and_creates_session() {
     );
     let effects = dispatch(Action::CycleMode, &mut app);
     let agent = &app.agents[&AgentId(0)];
-    assert!(!agent.session.is_yolo(), "Plan → Auto must not enable yolo");
-    assert_eq!(app.current_ui.permission_mode.as_deref(), Some("auto"));
-    assert_eq!(agent.plan_mode_pending, Some(false));
-    assert!(agent.deferred_session_mode.is_none());
+    assert_eq!(agent.ask_mode_pending, Some(false));
+    assert_eq!(agent.plan_mode_pending, Some(true));
+    assert_eq!(
+        agent.deferred_session_mode,
+        Some(xai_grok_tools::types::SessionMode::Plan),
+        "Ask → Plan must defer Plan"
+    );
     assert!(
         !effects
             .iter()
             .any(|e| matches!(e, Effect::CreateSession { .. })),
         "no duplicate CreateSession, got {effects:?}"
     );
+    let effects = dispatch(Action::CycleMode, &mut app);
+    let agent = &app.agents[&AgentId(0)];
+    assert_eq!(agent.plan_mode_pending, Some(false));
+    assert_eq!(agent.debug_mode_pending, Some(true));
+    assert_eq!(
+        agent.deferred_session_mode,
+        Some(xai_grok_tools::types::SessionMode::Debug),
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::CreateSession { .. })),
+        "no duplicate CreateSession, got {effects:?}"
+    );
+    let effects = dispatch(Action::CycleMode, &mut app);
+    let agent = &app.agents[&AgentId(0)];
+    assert!(!agent.session.is_yolo(), "Debug → Auto must not enable yolo");
+    assert_eq!(app.current_ui.permission_mode.as_deref(), Some("auto"));
+    assert_eq!(agent.debug_mode_pending, Some(false));
+    assert!(agent.deferred_session_mode.is_none());
     assert!(
         effects.iter().any(|e| matches!(
             e,
@@ -1801,7 +1824,7 @@ fn dispatch_cycle_mode_pre_session_cycles_locally_and_creates_session() {
                 ..
             }
         )),
-        "pre-session Plan → Auto must persist the displayed mode, got {effects:?}"
+        "pre-session Debug → Auto must persist the displayed mode, got {effects:?}"
     );
     let _ = dispatch(Action::CycleMode, &mut app);
     let agent = &app.agents[&AgentId(0)];

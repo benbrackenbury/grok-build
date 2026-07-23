@@ -1015,6 +1015,13 @@ pub trait StorageAdapter: Send + Sync {
         state: &crate::session::debug_mode::DebugModeSnapshot,
     ) -> io::Result<()>;
 
+    /// Write/update ask mode lifecycle state
+    async fn write_ask_mode_state(
+        &self,
+        info: &Info,
+        state: &crate::session::ask_mode::AskModeSnapshot,
+    ) -> io::Result<()>;
+
     /// Write/update the session signals snapshot
     async fn write_signals(&self, info: &Info, signals: &SessionSignals) -> io::Result<()>;
 

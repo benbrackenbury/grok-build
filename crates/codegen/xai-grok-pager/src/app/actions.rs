@@ -418,7 +418,7 @@ pub enum Action {
     /// time, mirroring how `AnnouncementsHide` resolves its target). The
     /// payload records which surface activated it, for telemetry.
     AnnouncementsOpenCta(xai_grok_telemetry::events::AnnouncementCtaSurface),
-    /// Cycle session mode (Shift+Tab): Normal → Plan → Always-Approve → Normal.
+    /// Cycle session mode (Shift+Tab): Normal → Ask → Plan → Debug → Auto → Always-Approve → Normal.
     /// Plan mode sends a signal to the shell; always-approve is local.
     CycleMode,
     /// Toggle YOLO mode (auto-approve all permissions). Ctrl+O.
@@ -670,6 +670,13 @@ pub enum Action {
     },
     /// Set debug mode on/off. Per-session, ACP-mediated.
     SetDebugMode(bool),
+    /// Enter ask mode. If a description is provided, also start a turn
+    /// with that text as the prompt (`/ask <question>`).
+    EnterAskMode {
+        description: Option<String>,
+    },
+    /// Set ask mode on/off. Per-session, ACP-mediated.
+    SetAskMode(bool),
     /// Enter feedback mode (visual prompt change, not a send).
     EnterFeedbackMode,
     /// Send feedback text collected in feedback mode.

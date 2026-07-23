@@ -33,8 +33,28 @@ impl SessionActor {
         let prompt_mode = prompt_mode_from_session_mode_id(&session_mode_id);
         *self.current_prompt_mode.lock() = prompt_mode;
         let mode = SessionMode::from_id(session_mode_id.0.as_ref());
+        if mode.is_ask() {
+            self.exit_peer_special_modes_for_ask().await;
+            let entered = self.ask_mode.lock().enter_pending();
+            if entered {
+                self.persist_ask_mode_state();
+                self.enqueue_current_mode_update(acp::SessionModeId::new(
+                    SessionMode::Ask.as_id(),
+                ));
+            }
+            tracing::info!(
+                session_id = %self.session_info.id.0,
+                entered,
+                "Ask mode toggled ON (Pending)"
+            );
+            let turn_in_flight = self.state.lock().await.running_task.is_some();
+            if entered && turn_in_flight {
+                self.activate_ask_mode_mid_turn().await;
+            }
+            return;
+        }
         if mode.is_plan() {
-            // Mutual exclusion with debug mode.
+            // Mutual exclusion with ask / debug mode.
             {
                 let turn_in_flight = self.state.lock().await.running_task.is_some();
                 let mut debug = self.debug_mode.lock();
@@ -47,6 +67,14 @@ impl SessionActor {
                         .notifications
                         .persistence_tx
                         .send(PersistenceMsg::DebugModeState(snapshot));
+                }
+                let was_ask = {
+                    let tracker = self.ask_mode.lock();
+                    tracker.state() != crate::session::ask_mode::AskModeState::Inactive
+                };
+                if was_ask {
+                    self.ask_mode.lock().user_exit(turn_in_flight);
+                    self.persist_ask_mode_state();
                 }
             }
             let entered = self.plan_mode.lock().enter_pending();
@@ -86,7 +114,7 @@ impl SessionActor {
             return;
         }
         if mode.is_debug() {
-            // Mutual exclusion with plan mode.
+            // Mutual exclusion with plan / ask mode.
             {
                 let turn_in_flight = self.state.lock().await.running_task.is_some();
                 let was_plan = {
@@ -96,6 +124,14 @@ impl SessionActor {
                 if was_plan {
                     self.plan_mode.lock().user_exit(turn_in_flight);
                     self.persist_plan_mode_state();
+                }
+                let was_ask = {
+                    let tracker = self.ask_mode.lock();
+                    tracker.state() != crate::session::ask_mode::AskModeState::Inactive
+                };
+                if was_ask {
+                    self.ask_mode.lock().user_exit(turn_in_flight);
+                    self.persist_ask_mode_state();
                 }
             }
             let entered = self.debug_mode.lock().enter_pending();
@@ -155,6 +191,22 @@ impl SessionActor {
                 "Debug mode toggled OFF"
             );
         }
+        let was_ask = {
+            let tracker = self.ask_mode.lock();
+            tracker.state() != crate::session::ask_mode::AskModeState::Inactive
+        };
+        if was_ask {
+            let turn_in_flight = self.state.lock().await.running_task.is_some();
+            self.ask_mode.lock().user_exit(turn_in_flight);
+            self.persist_ask_mode_state();
+            self.enqueue_current_mode_update(session_mode_id.clone());
+            tracing::info!(
+                session_id = %self.session_info.id.0,
+                new_mode = %session_mode_id.0,
+                turn_in_flight,
+                "Ask mode toggled OFF"
+            );
+        }
         let agent_def = match session_mode_id.0.as_ref() {
             "browser_use" => Some(AgentDefinition::browser_use()),
             name => {
@@ -201,8 +253,17 @@ impl SessionActor {
                 if entered {
                     self.persist_plan_mode_state();
                 }
+                // Leaving ask when entering plan via _meta.mode.
+                let was_ask = {
+                    let tracker = self.ask_mode.lock();
+                    tracker.state() != crate::session::ask_mode::AskModeState::Inactive
+                };
+                if was_ask {
+                    self.ask_mode.lock().user_exit(false);
+                    self.persist_ask_mode_state();
+                }
             }
-            PromptMode::Agent | PromptMode::Ask => {
+            PromptMode::Ask => {
                 let was_plan = {
                     let tracker = self.plan_mode.lock();
                     tracker.state() != PlanModeState::Inactive
@@ -210,6 +271,28 @@ impl SessionActor {
                 if was_plan {
                     self.plan_mode.lock().user_exit(false);
                     self.persist_plan_mode_state();
+                }
+                let entered = self.ask_mode.lock().enter_pending();
+                if entered {
+                    self.persist_ask_mode_state();
+                }
+            }
+            PromptMode::Agent => {
+                let was_plan = {
+                    let tracker = self.plan_mode.lock();
+                    tracker.state() != PlanModeState::Inactive
+                };
+                if was_plan {
+                    self.plan_mode.lock().user_exit(false);
+                    self.persist_plan_mode_state();
+                }
+                let was_ask = {
+                    let tracker = self.ask_mode.lock();
+                    tracker.state() != crate::session::ask_mode::AskModeState::Inactive
+                };
+                if was_ask {
+                    self.ask_mode.lock().user_exit(false);
+                    self.persist_ask_mode_state();
                 }
             }
         }
@@ -415,6 +498,126 @@ impl SessionActor {
             .notifications
             .persistence_tx
             .send(PersistenceMsg::DebugModeState(snapshot));
+    }
+
+    pub(super) fn persist_ask_mode_state(&self) {
+        let snapshot = self.ask_mode.lock().snapshot();
+        let _ = self
+            .notifications
+            .persistence_tx
+            .send(PersistenceMsg::AskModeState(snapshot));
+    }
+
+    /// Exit plan/debug when entering ask (mutual exclusion).
+    async fn exit_peer_special_modes_for_ask(&self) {
+        let turn_in_flight = self.state.lock().await.running_task.is_some();
+        {
+            let mut debug = self.debug_mode.lock();
+            if debug.is_active()
+                || debug.state() != crate::session::debug_mode::DebugModeState::Inactive
+            {
+                debug.user_exit(turn_in_flight);
+                let snapshot = debug.snapshot();
+                drop(debug);
+                let _ = self
+                    .notifications
+                    .persistence_tx
+                    .send(PersistenceMsg::DebugModeState(snapshot));
+            }
+        }
+        let was_plan = {
+            let tracker = self.plan_mode.lock();
+            tracker.state() != crate::session::plan_mode::PlanModeState::Inactive
+        };
+        if was_plan {
+            self.plan_mode.lock().user_exit(turn_in_flight);
+            self.persist_plan_mode_state();
+        }
+    }
+
+    /// Inject ask-mode system-reminders (Pending→Active, per-turn, exit).
+    pub(super) async fn inject_ask_mode_reminders(&self) {
+        use crate::session::ask_mode::{
+            AskModeState, ask_mode_exit_reminder_template, ask_mode_reentry_reminder_template,
+            ask_mode_reminder_full_template, ask_mode_reminder_sparse_template,
+        };
+        let push_reminder = |this: &Self, content: &str| {
+            this.push_system_reminder_with_tag(content, this.reminder_wrapper_tag());
+        };
+        let mut injected_this_turn = false;
+        let activation = {
+            let tracker = self.ask_mode.lock();
+            (tracker.state() == AskModeState::Pending).then(|| tracker.is_reentry())
+        };
+        if let Some(is_reentry) = activation {
+            self.ask_mode.lock().activate();
+            self.persist_ask_mode_state();
+            let template = if is_reentry {
+                ask_mode_reentry_reminder_template()
+            } else {
+                ask_mode_reminder_full_template()
+            };
+            push_reminder(self, template);
+            injected_this_turn = true;
+            self.ask_mode.lock().record_reminder_injected();
+            self.persist_ask_mode_state();
+            tracing::info!(
+                session_id = %self.session_info.id.0,
+                is_reentry,
+                "Ask mode activated: injected system-reminder"
+            );
+        }
+        if !injected_this_turn {
+            let use_full = {
+                let tracker = self.ask_mode.lock();
+                tracker.is_active().then(|| tracker.should_use_full_reminder())
+            };
+            if let Some(use_full) = use_full {
+                let template = if use_full {
+                    ask_mode_reminder_full_template()
+                } else {
+                    ask_mode_reminder_sparse_template()
+                };
+                push_reminder(self, template);
+                self.ask_mode.lock().record_reminder_injected();
+                self.persist_ask_mode_state();
+            }
+        }
+        if self.ask_mode.lock().has_pending_exit_reminder() {
+            push_reminder(self, ask_mode_exit_reminder_template());
+            self.ask_mode.lock().clear_pending_exit_reminder();
+            self.persist_ask_mode_state();
+        }
+    }
+
+    pub(super) async fn activate_ask_mode_mid_turn(&self) {
+        use crate::session::ask_mode::{
+            AskModeState, ask_mode_reentry_reminder_template, ask_mode_reminder_full_template,
+        };
+        let activation = {
+            let tracker = self.ask_mode.lock();
+            (tracker.state() == AskModeState::Pending).then(|| tracker.is_reentry())
+        };
+        let Some(is_reentry) = activation else {
+            return;
+        };
+        let template = if is_reentry {
+            ask_mode_reentry_reminder_template()
+        } else {
+            ask_mode_reminder_full_template()
+        };
+        let tag = self.reminder_wrapper_tag();
+        let wrapped = format!("<{tag}>\n{template}\n</{tag}>");
+        let activated = self.ask_mode.lock().activate_mid_turn(wrapped);
+        if !activated {
+            return;
+        }
+        self.persist_ask_mode_state();
+        tracing::info!(
+            session_id = %self.session_info.id.0,
+            is_reentry,
+            "Ask mode activated mid-turn"
+        );
     }
 
     /// Inject debug-mode system-reminders (Pending→Active, per-turn, exit).

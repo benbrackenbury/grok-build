@@ -29,8 +29,9 @@ use super::import_claude::{
 use super::interject::dispatch_interject;
 use super::jump::{dispatch_jump_dismiss, dispatch_jump_picker_select, dispatch_jump_show_picker};
 use super::modes::{
-    dispatch_cycle_mode, dispatch_enter_debug_mode, dispatch_enter_plan_mode, dispatch_show_plan,
-    dispatch_toggle_yolo, set_debug_mode, set_permission_mode, set_plan_mode, set_yolo_mode,
+    dispatch_cycle_mode, dispatch_enter_ask_mode, dispatch_enter_debug_mode,
+    dispatch_enter_plan_mode, dispatch_show_plan, dispatch_toggle_yolo, set_ask_mode, set_debug_mode,
+    set_permission_mode, set_plan_mode, set_yolo_mode,
 };
 use super::notes::{
     dispatch_enter_feedback_mode, dispatch_enter_remember_mode,
@@ -923,6 +924,8 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
         Action::ShowPlan => dispatch_show_plan(app),
         Action::EnterPlanMode { description } => dispatch_enter_plan_mode(app, description),
         Action::SetPlanMode(kind) => set_plan_mode(app, kind),
+        Action::EnterAskMode { description } => dispatch_enter_ask_mode(app, description),
+        Action::SetAskMode(on) => set_ask_mode(app, on),
         Action::EnterDebugMode { description } => dispatch_enter_debug_mode(app, description),
         Action::SetDebugMode(on) => set_debug_mode(app, on),
         Action::EnterFeedbackMode => dispatch_enter_feedback_mode(app),
