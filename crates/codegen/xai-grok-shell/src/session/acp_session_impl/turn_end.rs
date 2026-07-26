@@ -257,6 +257,26 @@ impl SessionActor {
                 self.persist_plan_mode_state();
             }
         }
+        {
+            let mut tracker = self.debug_mode.lock();
+            let transitioned =
+                tracker.state() == crate::session::debug_mode::DebugModeState::ExitPending;
+            tracker.complete_deferred_exit();
+            drop(tracker);
+            if transitioned {
+                self.persist_debug_mode_state();
+            }
+        }
+        {
+            let mut tracker = self.ask_mode.lock();
+            let transitioned =
+                tracker.state() == crate::session::ask_mode::AskModeState::ExitPending;
+            tracker.complete_deferred_exit();
+            drop(tracker);
+            if transitioned {
+                self.persist_ask_mode_state();
+            }
+        }
         // Drop the state guard before the async emit so the persist/broadcast
         // fork doesn't run under the state lock.
         drop(state);

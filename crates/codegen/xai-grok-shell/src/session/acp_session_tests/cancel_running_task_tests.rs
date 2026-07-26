@@ -227,6 +227,11 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                         "/tmp/test-session",
                     )),
                 )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
+                    )),
+                )),
                 goal_enabled: false,
                 background_workflows_enabled: false,
                 goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
@@ -700,6 +705,11 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                         "/tmp/test-session",
                     )),
                 )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
+                    )),
+                )),
                 goal_enabled: false,
                 background_workflows_enabled: false,
                 goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
@@ -988,6 +998,11 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 debug_mode: Arc::new(parking_lot::Mutex::new(
                     crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
                         "/tmp/test-session",
+                    )),
+                )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
                     )),
                 )),
                 goal_enabled: false,
@@ -2248,6 +2263,11 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 debug_mode: Arc::new(parking_lot::Mutex::new(
                     crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
                         "/tmp/test-session",
+                    )),
+                )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
                     )),
                 )),
                 goal_enabled: false,

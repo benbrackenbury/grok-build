@@ -8,7 +8,7 @@ Use it when you can reproduce a bug but the root cause is unclear from reading t
 
 ## How to enter
 
-- **Shift+Tab** — Cycle modes: Normal → Plan → **Debug** → Auto → Always-approve → Normal.
+- **Shift+Tab** — Cycle modes: Normal → Ask → Plan → **Debug** → Auto → Always-approve → Normal.
 - **`/debug-mode`** — Enter debug mode for the next prompts.
 - **`/debug-mode <bug description>`** — Enter debug mode and start a turn with that description.
 - **`/debug-mode off`** — Leave debug mode.

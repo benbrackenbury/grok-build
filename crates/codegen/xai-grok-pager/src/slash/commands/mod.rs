@@ -5,6 +5,7 @@
 //! construction.
 pub mod always_approve;
 pub mod announcements;
+pub mod ask;
 pub mod auto;
 pub mod btw;
 pub mod cd;
@@ -117,6 +118,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(announcements::AnnouncementsCommand),
         Arc::new(remember::RememberCommand),
         Arc::new(plan::PlanCommand),
+        Arc::new(ask::AskCommand),
         Arc::new(debug_mode::DebugModeCommand),
         Arc::new(view_plan::ViewPlanCommand),
         Arc::new(resume::ResumeCommand),

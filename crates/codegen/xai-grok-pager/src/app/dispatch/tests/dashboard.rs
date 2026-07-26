@@ -1264,7 +1264,7 @@ fn dashboard_toggle_auto_approve_blocked_by_policy_pin() {
     );
 }
 /// Shift+Tab in the peek cycles the PEEKED agent's live mode
-/// (Normal → Plan) and leaves the dashboard foregrounded — the same
+/// (Normal → Ask) and leaves the dashboard foregrounded — the same
 /// effect as Shift+Tab inside that agent's chat view.
 #[serial_test::serial(GROK_AGENT_DASHBOARD)]
 #[test]
@@ -1281,13 +1281,17 @@ fn dashboard_peek_cycle_mode_cycles_peeked_agent() {
             fields,
         ));
     }
+    // Agent starts in Normal (no ask, no plan, no yolo).
+    assert_eq!(app.agents.get(&AgentId(0)).unwrap().ask_mode_pending, None);
     assert_eq!(app.agents.get(&AgentId(0)).unwrap().plan_mode_pending, None);
     assert!(!app.agents.get(&AgentId(0)).unwrap().session.yolo_mode);
     let _ = dispatch(Action::DashboardPeekCycleMode, &mut app);
+
+    // Normal → Ask: the PEEKED agent enters ask mode.
     assert_eq!(
-        app.agents.get(&AgentId(0)).unwrap().plan_mode_pending,
+        app.agents.get(&AgentId(0)).unwrap().ask_mode_pending,
         Some(true),
-        "peek cycle must put the peeked agent into plan mode",
+        "peek cycle must put the peeked agent into ask mode",
     );
     assert!(
         matches!(app.active_view, ActiveView::AgentDashboard),

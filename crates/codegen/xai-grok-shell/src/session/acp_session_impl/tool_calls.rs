@@ -130,6 +130,32 @@ pub(super) fn should_intercept_exit_plan_approval(
     }
     true
 }
+/// Verdict for a tool call evaluated against the ask-mode edit gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AskEditGate {
+    /// Execute normally (ask mode inactive, or not an edit).
+    Allow,
+    /// Any edit while ask mode is active.
+    Reject,
+}
+
+/// Gate edit-class tool calls while ask mode is active.
+///
+/// Ask mode is fully read-only for file mutations in every permission mode,
+/// including always-approve. Unlike plan mode there is no plan-file carve-out.
+pub(super) fn ask_mode_edit_gate(
+    tracker: &crate::session::ask_mode::AskModeTracker,
+    access_kind: &AccessKind,
+) -> AskEditGate {
+    if !tracker.is_active() {
+        return AskEditGate::Allow;
+    }
+    match access_kind {
+        AccessKind::Edit(_) => AskEditGate::Reject,
+        _ => AskEditGate::Allow,
+    }
+}
+
 /// Verdict for a tool call evaluated against the plan-mode edit gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PlanEditGate {
@@ -917,6 +943,18 @@ impl SessionActor {
             )
             .in_scope(|| {});
             let msg = self.plan_mode_edit_rejected_message().await;
+            self.handle_tool_not_executed(&call.id, &tool_call_id, msg)
+                .await?;
+            return Ok(Err(ToolLoop::Continue));
+        }
+        let ask_gate = ask_mode_edit_gate(&self.ask_mode.lock(), &access_kind);
+        if ask_gate != AskEditGate::Allow {
+            tracing::info_span!(
+                "tool.decision", tool_name = % call.function.name, tool_use_id = % call
+                .id, decision = "deny", source = "ask_mode", wait_ms = 0_i64,
+            )
+            .in_scope(|| {});
+            let msg = crate::session::ask_mode::ask_mode_edit_rejected_template().to_string();
             self.handle_tool_not_executed(&call.id, &tool_call_id, msg)
                 .await?;
             return Ok(Err(ToolLoop::Continue));

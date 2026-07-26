@@ -1402,5 +1402,16 @@ pub(super) fn detect_plan_mode_change(update: &acp::SessionUpdate, agent: &mut A
             "Debug mode state updated (from CurrentModeUpdate)"
         );
     }
+    let was_ask = agent.ask_mode_active;
+    let now_ask = mode.is_ask();
+    agent.ask_mode_active = now_ask;
+    agent.ask_mode_pending = None;
+    if was_ask != now_ask {
+        tracing::info!(
+            mode_id = %cmu.current_mode_id.0,
+            ask_active = now_ask,
+            "Ask mode state updated (from CurrentModeUpdate)"
+        );
+    }
     true
 }

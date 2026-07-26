@@ -621,6 +621,11 @@ pub(crate) async fn spawn_session_actor(
         let tracker = crate::session::debug_mode::DebugModeTracker::new(session_dir);
         Arc::new(parking_lot::Mutex::new(tracker))
     };
+    let ask_mode = {
+        let session_dir = crate::session::persistence::session_dir(&session_info);
+        let tracker = crate::session::ask_mode::AskModeTracker::new(session_dir);
+        Arc::new(parking_lot::Mutex::new(tracker))
+    };
     let goal_tracker = {
         let session_dir = crate::session::persistence::session_dir(&session_info);
         let tracker = if let Some(snapshot) = persisted_goal_mode {
@@ -1665,6 +1670,7 @@ pub(crate) async fn spawn_session_actor(
         turn_prompt_mode: turn_prompt_mode.clone(),
         plan_mode: plan_mode.clone(),
         debug_mode: debug_mode.clone(),
+        ask_mode: ask_mode.clone(),
         goal_enabled,
         background_workflows_enabled,
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(if background_workflows_enabled {
@@ -2116,6 +2122,7 @@ pub(crate) async fn spawn_session_actor(
             ask_user_question_enabled,
             plan_mode: plan_mode.clone(),
             debug_mode: debug_mode.clone(),
+            ask_mode: ask_mode.clone(),
             force_compact,
             permission_handle: permissions_for_handle,
             attribution_callback: attribution_callback_for_handle,

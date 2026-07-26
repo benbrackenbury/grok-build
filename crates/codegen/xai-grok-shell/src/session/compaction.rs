@@ -1728,6 +1728,10 @@ impl SessionActor {
         self.persist_announcement_state().await;
         self.plan_mode.lock().reset_after_compaction();
         self.persist_plan_mode_state();
+        self.debug_mode.lock().reset_after_compaction();
+        self.persist_debug_mode_state();
+        self.ask_mode.lock().reset_after_compaction();
+        self.persist_ask_mode_state();
         self.dispatch_hook(
             xai_grok_hooks::event::HookEventName::PostCompact,
             xai_grok_hooks::event::HookPayload::PostCompact {
@@ -2388,6 +2392,11 @@ mod inline_auto_compact_flow_tests {
             debug_mode: Arc::new(parking_lot::Mutex::new(
                 crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
                     "/tmp/test-session",
+                )),
+            )),
+            ask_mode: Arc::new(parking_lot::Mutex::new(
+                crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                    "/tmp/test-ask-session",
                 )),
             )),
             goal_enabled: false,

@@ -782,6 +782,8 @@ pub(crate) struct SessionActor {
     /// `Arc`-shared with the notification bridge for `DebugModeEntered` /
     /// `DebugModeExited`.
     pub(crate) debug_mode: Arc<parking_lot::Mutex<crate::session::debug_mode::DebugModeTracker>>,
+    /// Ask mode lifecycle tracker (Cursor-style read-only Q&A).
+    pub(crate) ask_mode: Arc<parking_lot::Mutex<crate::session::ask_mode::AskModeTracker>>,
     /// Whether goal mode (`/goal`) is enabled for this session (feature flag).
     pub(crate) goal_enabled: bool,
     pub(crate) background_workflows_enabled: bool,
