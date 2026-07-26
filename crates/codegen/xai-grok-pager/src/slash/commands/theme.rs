@@ -432,6 +432,7 @@ mod tests {
                     yolo_mode: false,
                     ..crate::settings::PagerLocalSnapshot::default()
                 },
+                billing_surface_visible: true,
             };
             for alias in ["system", "terminal", "transparent"] {
                 let result = cmd.run(&mut ctx, alias);

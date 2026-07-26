@@ -661,7 +661,8 @@ async fn handle_notification(
                     plan.user_exit(false);
                     let snapshot = plan.snapshot();
                     let _ = config
-                        .persistence_tx
+                        .persistence
+                        .tx
                         .send(PersistenceMsg::PlanModeState(snapshot));
                 }
             }
@@ -671,7 +672,8 @@ async fn handle_notification(
                 *config.turn_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
                 let snapshot = config.debug_mode.lock().snapshot();
                 let _ = config
-                    .persistence_tx
+                    .persistence
+                    .tx
                     .send(PersistenceMsg::DebugModeState(snapshot));
                 emit_current_mode_update(config, xai_grok_tools::types::SessionMode::Debug).await;
             }
@@ -689,7 +691,8 @@ async fn handle_notification(
                 *config.turn_prompt_mode.lock() = crate::session::plan_mode::PromptMode::Agent;
                 let snapshot = config.debug_mode.lock().snapshot();
                 let _ = config
-                    .persistence_tx
+                    .persistence
+                    .tx
                     .send(PersistenceMsg::DebugModeState(snapshot));
                 emit_current_mode_update(config, xai_grok_tools::types::SessionMode::Default).await;
             }
