@@ -152,6 +152,8 @@ pub struct SessionHandle {
     pub plan_mode: std::sync::Arc<parking_lot::Mutex<crate::session::plan_mode::PlanModeTracker>>,
     /// Debug mode tracker — shared with the session actor via Arc.
     pub debug_mode: std::sync::Arc<parking_lot::Mutex<crate::session::debug_mode::DebugModeTracker>>,
+    /// Ask mode tracker — shared with the session actor via Arc.
+    pub ask_mode: std::sync::Arc<parking_lot::Mutex<crate::session::ask_mode::AskModeTracker>>,
     /// Debug flag: when set to `true`, the next turn unconditionally triggers
     /// auto-compaction regardless of context window usage. Consumed (reset to
     /// `false`) atomically on use via `compare_exchange`.

@@ -483,9 +483,10 @@ pub enum PromptMode {
     /// Full agent with tool use and file edits.
     #[default]
     Agent,
-    /// Question-answering only, no tool use.
+    /// Cursor-style ask mode: question-answering with read-only exploration
+    /// tools (no file edits).
     Ask,
-    /// Planning/reasoning only, no tool use.
+    /// Planning/reasoning; read-only except the plan file.
     Plan,
 }
 impl PromptMode {

@@ -1383,6 +1383,10 @@ pub struct AgentView {
     pub(crate) debug_mode_active: bool,
     /// Optimistic debug-mode state set immediately on `/debug-mode`.
     pub(crate) debug_mode_pending: Option<bool>,
+    /// Whether ask mode is currently active (confirmed by ACP).
+    pub(crate) ask_mode_active: bool,
+    /// Optimistic ask-mode state set immediately on `/ask` or Shift+Tab.
+    pub(crate) ask_mode_pending: Option<bool>,
     /// Session mode to apply once this agent's ACP session exists. Set when
     /// the agent is spawned from the dashboard with `/plan` active (the
     /// session does not exist yet, so the mode can't be sent immediately).

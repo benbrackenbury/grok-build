@@ -240,6 +240,8 @@ pub enum PersistenceMsg {
     PlanModeState(crate::session::plan_mode::PlanModeSnapshot),
     /// Debug mode lifecycle state to persist
     DebugModeState(crate::session::debug_mode::DebugModeSnapshot),
+    /// Ask mode lifecycle state to persist
+    AskModeState(crate::session::ask_mode::AskModeSnapshot),
     /// A rewind point to persist
     RewindPoint(RewindPoint),
     /// Truncate rewind points from a specific prompt index (inclusive).
@@ -1747,6 +1749,11 @@ impl SessionPersistence {
                 PersistenceMsg::DebugModeState(state) => {
                     if let Err(e) = self.storage.write_debug_mode_state(&self.info, &state).await {
                         tracing::warn!(?e, "failed to write debug mode state");
+                    }
+                }
+                PersistenceMsg::AskModeState(state) => {
+                    if let Err(e) = self.storage.write_ask_mode_state(&self.info, &state).await {
+                        tracing::warn!(?e, "failed to write ask mode state");
                     }
                 }
                 PersistenceMsg::GoalModeState(state) => {

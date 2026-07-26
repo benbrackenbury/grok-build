@@ -977,6 +977,7 @@ impl AgentView {
             .unwrap_or_else(|| "unknown".to_string());
         let effective_plan = self.plan_mode_pending.unwrap_or(self.plan_mode_active);
         let effective_debug = self.debug_mode_pending.unwrap_or(self.debug_mode_active);
+        let effective_ask = self.ask_mode_pending.unwrap_or(self.ask_mode_active);
         let casual_commenting = self.is_casual_commenting();
         let prompt_focused = if self.plan_approval_view.is_some() {
             self.plan_approval_view
@@ -1000,6 +1001,8 @@ impl AgentView {
                 Some(c)
             } else if effective_plan || casual_commenting {
                 Some(theme.accent_plan)
+            } else if effective_ask {
+                Some(theme.accent_user)
             } else if effective_debug {
                 Some(theme.accent_system)
             } else {
@@ -1007,6 +1010,8 @@ impl AgentView {
             },
             border_color_override: if effective_plan || casual_commenting {
                 crate::render::color::blend_color(theme.bg_base, theme.accent_plan, 0.4)
+            } else if effective_ask {
+                crate::render::color::blend_color(theme.bg_base, theme.accent_user, 0.4)
             } else if effective_debug {
                 crate::render::color::blend_color(theme.bg_base, theme.accent_system, 0.4)
             } else {
@@ -2469,6 +2474,12 @@ impl AgentView {
                 color: Some(theme.accent_plan),
                 bold: false,
             });
+        } else if effective_ask {
+            mode_flags_vec.push(PromptFlag {
+                text: "ask",
+                color: Some(theme.accent_user),
+                bold: false,
+            });
         } else if self.debug_hitl_view.is_some() {
             let label = self
                 .debug_hitl_view
@@ -2490,14 +2501,14 @@ impl AgentView {
                 bold: false,
             });
         }
-        if self.session.is_yolo() && !effective_plan && !effective_debug {
+        if self.session.is_yolo() && !effective_plan && !effective_debug && !effective_ask {
             mode_flags_vec.push(PromptFlag {
                 text: "always-approve",
                 color: None,
                 bold: false,
             });
         }
-        if self.auto_flag_visible(effective_plan || effective_debug) {
+        if self.auto_flag_visible(effective_plan || effective_debug || effective_ask) {
             mode_flags_vec.push(PromptFlag {
                 text: "auto",
                 color: Some(theme.accent_system),

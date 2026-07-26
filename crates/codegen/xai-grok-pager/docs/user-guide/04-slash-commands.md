@@ -168,6 +168,24 @@ Enter plan mode.
 /plan [description]
 ```
 
+### `/ask`
+
+Enter ask mode (read-only Q&A). Pass a question to enter ask mode and start a turn. Pass `off` to leave ask mode.
+
+```
+/ask [question]
+/ask off
+```
+
+### `/debug-mode`
+
+Enter debug mode (hypothesis → instrument → reproduce → fix). Distinct from `/debug` (TUI overlays).
+
+```
+/debug-mode [bug description]
+/debug-mode off
+```
+
 ### `/view-plan`
 
 Open a preview of the current saved plan. Aliases: `/show-plan`, `/plan-view`.

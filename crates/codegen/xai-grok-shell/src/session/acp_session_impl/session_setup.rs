@@ -333,6 +333,13 @@ impl SessionActor {
             self.plan_mode.lock().record_reminder_injected();
             self.persist_plan_mode_state();
         }
+        let ask_activation = self.ask_mode.lock().take_pending_activation();
+        if let Some(text) = ask_activation {
+            self.chat_state_handle
+                .push_user_message(ConversationItem::system_reminder(text));
+            self.ask_mode.lock().record_reminder_injected();
+            self.persist_ask_mode_state();
+        }
         let items: Vec<ConversationItem> =
             std::mem::take(&mut *self.pending_skill_reminders.lock());
         if items.is_empty() {

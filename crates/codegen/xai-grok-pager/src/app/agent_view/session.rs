@@ -308,6 +308,8 @@ impl AgentView {
             plan_mode_pending: None,
             debug_mode_active: false,
             debug_mode_pending: None,
+            ask_mode_active: false,
+            ask_mode_pending: None,
             deferred_session_mode: None,
             pending_extensions_fetch: false,
             in_dashboard_overlay: false,

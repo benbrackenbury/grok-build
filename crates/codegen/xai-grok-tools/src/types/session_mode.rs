@@ -34,6 +34,10 @@ impl SessionMode {
         matches!(self, Self::Plan)
     }
 
+    pub fn is_ask(&self) -> bool {
+        matches!(self, Self::Ask)
+    }
+
     pub fn is_debug(&self) -> bool {
         matches!(self, Self::Debug)
     }
@@ -64,6 +68,14 @@ mod tests {
         assert!(!SessionMode::Default.is_plan());
         assert!(!SessionMode::Ask.is_plan());
         assert!(!SessionMode::Debug.is_plan());
+    }
+
+    #[test]
+    fn is_ask_only_for_ask_variant() {
+        assert!(SessionMode::Ask.is_ask());
+        assert!(!SessionMode::Default.is_ask());
+        assert!(!SessionMode::Plan.is_ask());
+        assert!(!SessionMode::Debug.is_ask());
     }
 
     #[test]

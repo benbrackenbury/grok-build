@@ -187,6 +187,11 @@ async fn create_test_actor(
                 "/tmp/test-session",
             )),
         )),
+        ask_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                "/tmp/test-ask-session",
+            )),
+        )),
         goal_enabled: false,
         background_workflows_enabled: false,
         goal_harness_enabled: std::sync::atomic::AtomicBool::new(false),
@@ -664,6 +669,11 @@ async fn create_test_actor_with_memory(
         debug_mode: Arc::new(parking_lot::Mutex::new(
             crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
                 "/tmp/test-session",
+            )),
+        )),
+        ask_mode: Arc::new(parking_lot::Mutex::new(
+            crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                "/tmp/test-ask-session",
             )),
         )),
         goal_enabled: false,
@@ -1460,6 +1470,11 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 debug_mode: Arc::new(parking_lot::Mutex::new(
                     crate::session::debug_mode::DebugModeTracker::new(std::path::PathBuf::from(
                         "/tmp/test-session",
+                    )),
+                )),
+                ask_mode: Arc::new(parking_lot::Mutex::new(
+                    crate::session::ask_mode::AskModeTracker::new(std::path::PathBuf::from(
+                        "/tmp/test-ask-session",
                     )),
                 )),
                 goal_enabled: false,
