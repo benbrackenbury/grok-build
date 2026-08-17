@@ -65,7 +65,11 @@ when a pick is already in upstream).
    the user asked. Full-workspace builds are too slow — always `-p`.
 8. **Install.** `cp target/debug/xai-grok-pager ~/.local/bin/spacex`
    (`target/release/xai-grok-pager` when this run was `--release`).
-   Confirm `spacex` is executable and print `ls -lh ~/.local/bin/spacex`.
+   Then ad-hoc resign so macOS AMFI does not SIGKILL the copied binary:
+   `xattr -c ~/.local/bin/spacex; codesign --force --sign - ~/.local/bin/spacex`.
+   A bare `cp` of a linker-signed debug Mach-O is `valid on disk` to
+   `codesign -v` but taskgated still kills it (`Code Signature Invalid`).
+   Confirm `spacex --version` and print `ls -lh ~/.local/bin/spacex`.
 
 ## Conflict policy
 

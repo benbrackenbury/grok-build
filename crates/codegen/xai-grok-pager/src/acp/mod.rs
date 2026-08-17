@@ -3,12 +3,16 @@
 //! Handles spawning the agent process, initializing the protocol,
 //! authenticating, and providing the channel for communication.
 
+pub mod backend;
 pub mod leader_bridge;
 pub mod meta;
 pub mod model_state;
 pub mod spawn;
+pub mod stdio_bridge;
 pub mod tracker;
 mod version_mismatch;
+
+pub use backend::AgentBackend;
 
 pub(crate) use version_mismatch::{is_version_mismatch_banner, version_mismatch_banner};
 
@@ -163,6 +167,8 @@ pub struct ConnectFlags {
     /// Seed agent sessions with auto (classifier) permission mode.
     /// Ignored when `default_yolo_mode` is true.
     pub default_auto_mode: bool,
+    /// Which ACP agent to spawn (`grok` in-process vs `cursor-agent acp`).
+    pub backend: backend::AgentBackend,
 }
 
 /// Connect to an agent: spawn, initialize, authenticate.
@@ -203,6 +209,10 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
 
     apply_config_writes(&flags);
 
+    if flags.backend.is_cursor() {
+        return connect_cursor(cancel, flags, agent_config).await;
+    }
+
     let memory_config = agent_config.memory_config.clone();
     let spawned = spawn::spawn_grok_shell(agent_config, cancel, memory_config).await?;
     let auth_manager = spawned.auth_manager.clone();
@@ -236,6 +246,8 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         )
         .await;
 
+    backend::set_current(AgentBackend::Grok);
+
     Ok(AcpConnection {
         tx,
         rx,
@@ -244,6 +256,78 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         auth_methods,
         cancel: spawned.cancel,
         agent_thread: Some(spawned.thread_handle),
+        available_commands,
+        needs_login,
+        login_label,
+        login_method_id,
+        auth_start_mode,
+        auth_meta,
+        leader_status_rx: None,
+        cancel_rewind_enabled,
+        session_recap_available,
+        auth_manager,
+    })
+}
+
+/// Spawn `cursor-agent acp` using the existing machine login. No Cursor OAuth
+/// is implemented here — the user must already be signed in via `cursor-agent login`.
+async fn connect_cursor(
+    cancel: &CancellationToken,
+    flags: ConnectFlags,
+    agent_config: AgentConfig,
+) -> Result<AcpConnection> {
+    startup::enter(StartupPhase::SpawnWorker);
+    let bin = backend::ensure_cursor_ready()?;
+    let spawn = stdio_bridge::StdioAcpSpawn::cursor_agent(&bin, flags.default_yolo_mode);
+    let agent_cancel = cancel.child_token();
+    let bridge = stdio_bridge::spawn_stdio_acp(spawn, agent_cancel.clone(), AgentBackend::Cursor)?;
+    let (tx, rx) = (bridge.channel.tx, bridge.channel.rx);
+
+    startup::enter(StartupPhase::AcpInitialize);
+    let (
+        models,
+        _is_grok_shell,
+        auth_methods,
+        default_auth_method_id,
+        available_commands,
+        cancel_rewind_enabled,
+        session_recap_available,
+    ) = initialize(&tx, &flags).await?;
+
+    // Cursor Agent is already authenticated via the local CLI login. An empty
+    // auth_methods list is success, not a prompt to run grok login.
+    let (needs_login, login_label, login_method_id, auth_start_mode, auth_meta) =
+        if auth_methods.is_empty() {
+            (false, None, None, AuthStartMode::Pending, None)
+        } else {
+            let (needs_login, login_label, login_method_id, auth_start_mode) =
+                startup_auth_metadata(&auth_methods);
+            bounded_eager_auth(
+                &tx,
+                &auth_methods,
+                default_auth_method_id.as_ref(),
+                needs_login,
+                login_label,
+                login_method_id,
+                auth_start_mode,
+            )
+            .await
+        };
+
+    let auth_manager = std::sync::Arc::new(xai_grok_shell::auth::AuthManager::new(
+        &xai_grok_shell::util::grok_home::grok_home(),
+        agent_config.grok_com_config.clone(),
+    ));
+    backend::set_current(AgentBackend::Cursor);
+
+    Ok(AcpConnection {
+        tx,
+        rx,
+        models,
+        is_grok_shell: false,
+        auth_methods,
+        cancel: agent_cancel,
+        agent_thread: Some(bridge.thread_handle),
         available_commands,
         needs_login,
         login_label,

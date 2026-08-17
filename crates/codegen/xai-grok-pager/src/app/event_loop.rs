@@ -927,6 +927,15 @@ pub(crate) async fn run(
         app.screen_mode_switch_hint = Some("Switched to minimal mode · /fullscreen to go back");
     } else if term_state.relaunched_into_fullscreen && !app.screen_mode.is_minimal() {
         app.screen_mode_switch_hint = Some("Switched to fullscreen mode · /minimal to go back");
+    } else if let Some(backend) = crate::acp::backend::take_switch_hint() {
+        app.screen_mode_switch_hint = Some(match backend {
+            crate::acp::AgentBackend::Cursor => {
+                "Switched to Cursor · /grok to use SpaceXAI again"
+            }
+            crate::acp::AgentBackend::Grok => {
+                "Switched to Grok Build · /cursor to use your Cursor subscription"
+            }
+        });
     }
     let remote_permission_mode = remote_settings
         .as_ref()

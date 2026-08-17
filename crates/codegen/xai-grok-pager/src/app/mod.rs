@@ -656,13 +656,22 @@ pub async fn run(
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
     let prefetch_elapsed = startup_start.elapsed();
     let requested_confinement = xai_grok_sandbox::requested_confinement_profile();
+    let cli_backend = args.requested_backend();
+    let acp_backend = crate::acp::backend::resolve(cli_backend, &raw_config);
+    // `--cursor` / `--grok` / `--backend` are a switch: write them so the
+    // next launch without a flag keeps the same agent.
+    if cli_backend.is_some()
+        && let Err(e) = crate::acp::backend::persist(acp_backend)
+    {
+        tracing::warn!(error = %e, "failed to persist ACP backend preference");
+    }
     let LeaderMode {
         use_leader,
         policy_disable_reason,
         disabled_by_confinement,
     } = resolve_leader_mode(
         args.leader,
-        args.no_leader,
+        args.no_leader || acp_backend.is_cursor(),
         &raw_config,
         remote_settings.as_ref(),
         true,
@@ -817,6 +826,7 @@ pub async fn run(
         ),
         default_yolo_mode: launch_yolo.yolo,
         default_auto_mode: launch_auto && !launch_yolo.yolo,
+        backend: acp_backend,
     };
     let mut config_watcher = crate::appearance::ConfigWatcher::start().await?;
     let alt_screen_config_mode = config_watcher.current().alt_screen;
@@ -1051,6 +1061,17 @@ pub async fn run(
         Ok(run_result) => {
             if run_result.quit_for_update {
                 return Ok(true);
+            }
+            if let Some(backend) = crate::acp::backend::take_relaunch() {
+                if let Err(e) = crate::acp::backend::exec_backend_relaunch(backend) {
+                    tracing::error!(error = %e, "backend relaunch failed");
+                    eprintln!(
+                        "Couldn't switch to {}. Restart with `--backend {}`.",
+                        backend.display_name(),
+                        backend.as_str()
+                    );
+                }
+                return Ok(false);
             }
             if let Some(relaunch) = run_result.relaunch.as_ref() {
                 if let Err(e) = screen_mode_relaunch::exec_screen_mode_relaunch(

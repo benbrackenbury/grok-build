@@ -54,6 +54,20 @@ Grok uses the API key as a fallback when no session token is active. If you have
 
 ---
 
+## Cursor subscription
+
+Grok can run against your **existing Cursor CLI login** instead of SpaceXAI. It does not open a second Cursor sign-in: it spawns `cursor-agent acp` and uses whatever `cursor-agent status` already shows.
+
+1. Install the Cursor CLI and run `cursor-agent login` once (or sign in from the Cursor app / CLI you already use).
+2. In the TUI, run `/cursor`, or start with `spacex --cursor`.
+3. Switch back with `/grok` or `spacex --grok`.
+
+The last choice is written to `[backend] provider` in `~/.grok/config.toml` and used on the next launch. `--cursor` / `--grok` (or `--backend cursor|grok`) both launch on that agent and persist the switch. `GROK_ACP_BACKEND` overrides config for one process. Point at a non-PATH binary with `CURSOR_AGENT`.
+
+If `cursor-agent` is missing or `cursor-agent status` is not authenticated, Grok tells you to run `cursor-agent login` and stays on Grok Build.
+
+---
+
 ## OIDC (Customer SSO)
 
 Authenticate developers through your own Identity Provider (IdP) -- such as Okta, Azure AD, or Auth0 -- instead of grok.com.

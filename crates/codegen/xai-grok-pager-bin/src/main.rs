@@ -2183,6 +2183,11 @@ async fn async_main(args: PagerArgs) -> Result<()> {
         {
             args.output_format = xai_grok_pager::headless::OutputFormat::Json;
         }
+        let cli_backend = args.requested_backend();
+        let backend = xai_grok_pager::acp::backend::resolve_from_disk(cli_backend);
+        if cli_backend.is_some() {
+            let _ = xai_grok_pager::acp::backend::persist(backend);
+        }
         return xai_grok_pager::headless::run_single_turn(
             prompt,
             args.verbatim,
@@ -2217,6 +2222,7 @@ async fn async_main(args: PagerArgs) -> Result<()> {
                 background_wait_timeout: std::time::Duration::from_secs(
                     args.background_wait_timeout_secs,
                 ),
+                backend,
             },
         )
         .await;

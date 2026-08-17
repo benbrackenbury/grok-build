@@ -193,6 +193,28 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             effects.push(Effect::Quit);
             effects
         }
+        Action::SwitchAcpBackend(backend) => {
+            if crate::acp::backend::current() == backend {
+                app.show_toast(&format!("Already using {}.", backend.display_name()));
+                return vec![];
+            }
+            if backend.is_cursor() {
+                let probe = crate::acp::backend::probe_cursor();
+                if !matches!(probe, crate::acp::backend::CursorProbe::Ready(_)) {
+                    let msg = crate::acp::backend::cursor_not_ready_message(&probe);
+                    app.show_toast(&msg);
+                    return vec![];
+                }
+            }
+            if let Err(e) = crate::acp::backend::persist(backend) {
+                app.show_toast(&format!("Couldn't save backend preference: {e}"));
+                return vec![];
+            }
+            crate::acp::backend::set_relaunch(backend);
+            let mut effects = unregister_all_active_sessions(app);
+            effects.push(Effect::Quit);
+            effects
+        }
         Action::NewSession => dispatch_new_session(app),
         #[cfg(feature = "local-workspace")]
         Action::ConfirmWelcomeLocalWorkspaceAck => {

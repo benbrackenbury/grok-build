@@ -525,6 +525,20 @@ pub struct PagerArgs {
     /// Model ID to use.
     #[clap(short = 'm', long = "model", value_name = "MODEL")]
     pub model: Option<String>,
+    /// ACP backend: `grok` (SpaceXAI, default) or `cursor` (existing Cursor CLI login).
+    #[clap(
+        long = "backend",
+        value_enum,
+        value_name = "BACKEND",
+        conflicts_with_all = ["cursor_flag", "grok_flag"]
+    )]
+    pub backend: Option<crate::acp::AgentBackend>,
+    /// Launch on Cursor Agent (existing `cursor-agent` login) and remember it.
+    #[clap(long = "cursor", conflicts_with_all = ["grok_flag", "backend"])]
+    pub cursor_flag: bool,
+    /// Launch on Grok Build (SpaceXAI) and remember it.
+    #[clap(long = "grok", conflicts_with_all = ["cursor_flag", "backend"])]
+    pub grok_flag: bool,
     /// Reasoning effort for reasoning models
     #[clap(
         long = "reasoning-effort",
@@ -854,6 +868,19 @@ impl PagerArgs {
             None
         }
     }
+    /// Explicit backend from `--cursor`, `--grok`, or `--backend`.
+    ///
+    /// `None` means keep the last persisted choice (`[backend] provider`).
+    pub fn requested_backend(&self) -> Option<crate::acp::AgentBackend> {
+        if self.cursor_flag {
+            Some(crate::acp::AgentBackend::Cursor)
+        } else if self.grok_flag {
+            Some(crate::acp::AgentBackend::Grok)
+        } else {
+            self.backend
+        }
+    }
+
     /// Parse CLI arguments without applying side effects.
     pub fn parse_cli() -> Self {
         let bin_name = std::env::args()
@@ -1199,6 +1226,25 @@ mod tests {
         let args = PagerArgs::try_parse_from(["grok", "--fullscreen"]).unwrap();
         assert!(args.fullscreen && !args.minimal);
         let err = PagerArgs::try_parse_from(["grok", "--minimal", "--fullscreen"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+    #[test]
+    fn cursor_and_grok_flags_select_and_conflict() {
+        let cursor = PagerArgs::try_parse_from(["grok", "--cursor"]).unwrap();
+        assert_eq!(
+            cursor.requested_backend(),
+            Some(crate::acp::AgentBackend::Cursor)
+        );
+        let grok = PagerArgs::try_parse_from(["grok", "--grok"]).unwrap();
+        assert_eq!(
+            grok.requested_backend(),
+            Some(crate::acp::AgentBackend::Grok)
+        );
+        assert_eq!(
+            PagerArgs::try_parse_from(["grok"]).unwrap().requested_backend(),
+            None
+        );
+        let err = PagerArgs::try_parse_from(["grok", "--cursor", "--grok"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
     #[test]

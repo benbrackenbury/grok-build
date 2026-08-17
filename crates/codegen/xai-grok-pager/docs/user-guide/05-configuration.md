@@ -45,6 +45,9 @@ Location: `~/.grok/config.toml`. If the file is missing, Grok uses its built-in 
 [cli]
 auto_update = true                     # check for updates on launch
 
+[backend]
+provider = "grok"                      # "grok" (SpaceXAI) or "cursor" (local Cursor CLI login)
+
 [models]
 default = "grok-4.5"                   # model used for new sessions
 web_search = "grok-4.5"                # model used by the web_search tool

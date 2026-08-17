@@ -10,6 +10,18 @@ Every command below lists its aliases where it has them. A few commands only app
 
 ## Session Management
 
+### `/cursor`
+
+Use Cursor Agent with the login already on this machine (`cursor-agent status`). Reloads the TUI against `cursor-agent acp` and remembers the choice for the next launch. Does not start a Cursor sign-in flow. Same as `spacex --cursor`.
+
+### `/grok`
+
+Switch back to Grok Build (SpaceXAI) and remember it. Alias: `/spacex`. Same as `spacex --grok`.
+
+### `/backend [grok|cursor]`
+
+Show the active ACP backend, or switch. Alias: `/provider`. Same as `/grok` / `/cursor` when given an argument.
+
 ### `/new`
 
 Start a fresh session and clear the current conversation. Alias: `/clear`.

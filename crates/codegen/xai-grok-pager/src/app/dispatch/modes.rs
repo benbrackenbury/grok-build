@@ -818,13 +818,15 @@ fn jump_to_plan_for_nudge(app: &mut AppView) -> Vec<Effect> {
         return vec![];
     }
     let Some(session_id) = agent.session.session_id.clone() else {
+        // No session yet: stage Plan like the pre-session Shift+Tab cycle.
+        // `deferred_session_mode` is applied in `handle_session_created`.
         agent.ask_mode_pending = Some(false);
         agent.plan_mode_pending = Some(true);
         agent.debug_mode_pending = Some(false);
         agent.deferred_session_mode = Some(xai_grok_tools::types::SessionMode::Plan);
         agent.show_mode_switch_banner("Plan");
         refresh_open_settings_modals(app);
-        return skip_picker_and_create_session(app, id);
+        return vec![];
     };
     agent.ask_mode_pending = Some(false);
     agent.plan_mode_pending = Some(true);

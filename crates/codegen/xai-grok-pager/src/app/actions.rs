@@ -47,6 +47,8 @@ pub enum Action {
     RelaunchInScreenMode {
         minimal: bool,
     },
+    /// Persist and relaunch against a different ACP backend (Grok vs Cursor).
+    SwitchAcpBackend(crate::acp::AgentBackend),
     /// Quit without double-press confirmation (e.g., from command palette or pre-login screens).
     QuitConfirmed,
     /// Create a new session from the welcome screen.

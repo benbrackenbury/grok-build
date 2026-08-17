@@ -25,7 +25,7 @@ use xai_grok_shell::util::config as cli_config;
 use xai_grok_telemetry::startup::PendingStartup;
 
 use crate::acp::model_state::{EffortTokenError, ModelState};
-use crate::acp::spawn::{AgentShutdownGuard, spawn_grok_shell};
+use crate::acp::spawn::{AgentShutdownGuard, SpawnedAgent, spawn_grok_shell};
 use crate::client_identity::{HEADLESS_CLIENT_TYPE, PAGER_CLIENT_VERSION};
 use crate::headless::reducer::{
     Lifecycle, McpServer, Reducer, SessionContext, StreamEvent, TurnEnd, map_session_update,
@@ -35,6 +35,28 @@ use crate::headless::reducer::{
 mod ext_protocol;
 mod reducer;
 use ext_protocol::{ExtEvent, handle_ext_notification, reply_headless_ext_method};
+
+async fn spawn_cursor_headless(cancel: &CancellationToken, yolo: bool) -> Result<SpawnedAgent> {
+    let bin = crate::acp::backend::ensure_cursor_ready()?;
+    let spawn = crate::acp::stdio_bridge::StdioAcpSpawn::cursor_agent(&bin, yolo);
+    let agent_cancel = cancel.child_token();
+    let bridge = crate::acp::stdio_bridge::spawn_stdio_acp(
+        spawn,
+        agent_cancel.clone(),
+        crate::acp::AgentBackend::Cursor,
+    )?;
+    let auth_manager = std::sync::Arc::new(xai_grok_shell::auth::AuthManager::new(
+        &xai_grok_shell::util::grok_home::grok_home(),
+        xai_grok_shell::auth::GrokComConfig::default(),
+    ));
+    crate::acp::backend::set_current(crate::acp::AgentBackend::Cursor);
+    Ok(SpawnedAgent {
+        thread_handle: bridge.thread_handle,
+        channel: bridge.channel,
+        cancel: agent_cancel,
+        auth_manager,
+    })
+}
 
 mod cli;
 pub use cli::{HeadlessPrompt, OutputFormat, parse_json_schema, parse_permission_rules_lenient};
@@ -77,6 +99,8 @@ pub struct HeadlessOptions {
     pub wait_for_background: bool,
     /// Max time to wait for background quiescence after the first turn ends.
     pub background_wait_timeout: Duration,
+    /// ACP backend (`grok` in-process vs `cursor-agent acp`).
+    pub backend: crate::acp::AgentBackend,
 }
 
 struct HeadlessEmitter {
@@ -845,13 +869,25 @@ pub async fn run_single_turn(
         );
         PendingStartup::finish_held(&mut pending_startup, crate::acp::StartupOutcome::Error);
     };
-    let spawned = match spawn_grok_shell(agent_config, &cancel, memory_config).await {
-        Ok(s) => s,
-        Err(e) => {
-            report_startup_failure(&timer);
-            let msg = format!("Couldn't start session: {e}");
-            emitter.on_error(&msg, None);
-            anyhow::bail!("{msg}");
+    let spawned = if options.backend.is_cursor() {
+        match spawn_cursor_headless(&cancel, options.yolo).await {
+            Ok(s) => s,
+            Err(e) => {
+                report_startup_failure(&timer);
+                let msg = format!("Couldn't start Cursor session: {e}");
+                emitter.on_error(&msg, None);
+                anyhow::bail!("{msg}");
+            }
+        }
+    } else {
+        match spawn_grok_shell(agent_config, &cancel, memory_config).await {
+            Ok(s) => s,
+            Err(e) => {
+                report_startup_failure(&timer);
+                let msg = format!("Couldn't start session: {e}");
+                emitter.on_error(&msg, None);
+                anyhow::bail!("{msg}");
+            }
         }
     };
     let _agent_guard = AgentShutdownGuard::new(cancel.clone(), Some(spawned.thread_handle));
