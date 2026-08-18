@@ -574,9 +574,15 @@ async fn open_session(
         )
         .await;
         if let Ok(resp) = try_load {
+            let models = crate::acp::cursor_effort::enrich_session_models(
+                acp_tx,
+                resp.models,
+                resp.config_options,
+            )
+            .await;
             return Ok(OpenedSession {
                 session_id: acp::SessionId::new(sid.to_string()),
-                models: ModelState::from(resp.models),
+                models: ModelState::from(models),
                 cwd: cwd.to_path_buf(),
             });
         }
@@ -588,9 +594,15 @@ async fn open_session(
         acp_tx,
     )
     .await?;
+    let models = crate::acp::cursor_effort::enrich_session_models(
+        acp_tx,
+        new_resp.models,
+        new_resp.config_options,
+    )
+    .await;
     Ok(OpenedSession {
         session_id: new_resp.session_id,
-        models: ModelState::from(new_resp.models),
+        models: ModelState::from(models),
         cwd: cwd.to_path_buf(),
     })
 }
@@ -615,9 +627,15 @@ async fn open_session_with_id(
         acp_tx,
     )
     .await?;
+    let models = crate::acp::cursor_effort::enrich_session_models(
+        acp_tx,
+        new_resp.models,
+        new_resp.config_options,
+    )
+    .await;
     Ok(OpenedSession {
         session_id: new_resp.session_id,
-        models: ModelState::from(new_resp.models),
+        models: ModelState::from(models),
         cwd: cwd.to_path_buf(),
     })
 }

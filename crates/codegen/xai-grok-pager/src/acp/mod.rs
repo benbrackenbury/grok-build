@@ -4,6 +4,7 @@
 //! authenticating, and providing the channel for communication.
 
 pub mod backend;
+pub mod cursor_effort;
 pub mod leader_bridge;
 pub mod meta;
 pub mod model_state;
@@ -569,6 +570,11 @@ fn client_capabilities_meta(flags: &ConnectFlags) -> serde_json::Value {
         "x.ai/hunkTracker": { "mode": hunk_mode },
         "x.ai/bashOutputNoColor": true,
         "x.ai/gitHeadChanged": true,
+        // Cursor Agent only exposes per-model effort/fast selectors when
+        // the client opts into the parameterized picker. Without this,
+        // grok-4.6 is advertised as a single baked variant and `/effort`
+        // has no menu.
+        "parameterizedModelPicker": true,
     })
 }
 
@@ -1229,6 +1235,7 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(blank["x.ai/hunkTracker"]["mode"], "agent_only");
+        assert_eq!(absent["parameterizedModelPicker"], true);
     }
 
     #[test]

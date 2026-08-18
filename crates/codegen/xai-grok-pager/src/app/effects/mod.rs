@@ -201,10 +201,16 @@ pub(crate) fn execute(
                             }),
                                 ),
                             );
+                            let models = helpers::enrich_session_models(
+                                &tx,
+                                resp.models,
+                                resp.config_options,
+                            )
+                            .await;
                             TaskResult::SessionCreated {
                                 agent_id,
                                 session_id: resp.session_id,
-                                models: resp.models,
+                                models,
                                 scheduler_background_loops: parse_session_scheduler_background_loops(
                                     resp.meta.as_ref(),
                                 ),
@@ -504,12 +510,18 @@ pub(crate) fn execute(
                         .await;
                     match result {
                         Ok(resp) => {
+                            let models = helpers::enrich_session_models(
+                                &tx,
+                                resp.models,
+                                resp.config_options,
+                            )
+                            .await;
                             TaskResult::WorktreeSessionCreated {
                                 agent_id,
                                 session_id: resp.session_id,
                                 worktree_path: worktree_root,
                                 session_cwd,
-                                models: resp.models,
+                                models,
                                 scheduler_background_loops: parse_session_scheduler_background_loops(
                                     resp.meta.as_ref(),
                                 ),
@@ -585,10 +597,16 @@ pub(crate) fn execute(
                             let running_prompt_id = parse_session_load_running_prompt_id(
                                 resp.meta.as_ref(),
                             );
+                            let models = helpers::enrich_session_models(
+                                &tx,
+                                resp.models,
+                                resp.config_options,
+                            )
+                            .await;
                             TaskResult::SessionLoaded {
                                 agent_id,
                                 session_id: acp_session_id,
-                                models: resp.models,
+                                models,
                                 code_restored,
                                 restore_summary,
                                 restore_degree,
@@ -1721,39 +1739,74 @@ pub(crate) fn execute(
             let tx = acp_tx.clone();
             tasks
                 .spawn(async move {
-                    let meta = effort
-                        .map(|eff| {
-                            use xai_grok_shell::sampling::types::{
-                                REASONING_EFFORT_META_KEY, reasoning_effort_meta_value,
-                            };
-                            let mut m = acp::Meta::new();
-                            m.insert(
-                                REASONING_EFFORT_META_KEY.to_string(),
-                                reasoning_effort_meta_value(eff),
-                            );
-                            m
-                        });
-                    let req = acp::SetSessionModelRequest::new(
-                            session_id,
-                            model_id.clone(),
-                        )
-                        .meta(meta);
-                    let result = acp_send(req, &tx)
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| {
-                            use xai_grok_shell::agent::config::ModelSwitchIncompatibleAgentError;
-                            if let Some(typed) = ModelSwitchIncompatibleAgentError::from_acp_error(
-                                &e,
-                            ) {
-                                SwitchModelError::IncompatibleAgent {
-                                    error: typed,
-                                    prev_model_id: prev_model_id.clone(),
-                                }
-                            } else {
-                                SwitchModelError::Other(sanitize_user_error(&e.to_string()))
+                    let map_err = |e: acp::Error| {
+                        use xai_grok_shell::agent::config::ModelSwitchIncompatibleAgentError;
+                        if let Some(typed) = ModelSwitchIncompatibleAgentError::from_acp_error(&e)
+                        {
+                            SwitchModelError::IncompatibleAgent {
+                                error: typed,
+                                prev_model_id: prev_model_id.clone(),
                             }
-                        });
+                        } else {
+                            SwitchModelError::Other(sanitize_user_error(&e.to_string()))
+                        }
+                    };
+                    let thought_config_id = crate::acp::cursor_effort::thought_level_config_id();
+                    let result = async {
+                        // Cursor applies effort via session/set_config_option.
+                        // Sending set_session_model with _meta.reasoningEffort
+                        // is ignored, so only do that on the Grok backend.
+                        if thought_config_id.is_none() || effort.is_none() {
+                            let meta = effort.map(|eff| {
+                                use xai_grok_shell::sampling::types::{
+                                    REASONING_EFFORT_META_KEY, reasoning_effort_meta_value,
+                                };
+                                let mut m = acp::Meta::new();
+                                m.insert(
+                                    REASONING_EFFORT_META_KEY.to_string(),
+                                    reasoning_effort_meta_value(eff),
+                                );
+                                m
+                            });
+                            acp_send(
+                                acp::SetSessionModelRequest::new(
+                                    session_id.clone(),
+                                    model_id.clone(),
+                                )
+                                .meta(meta),
+                                &tx,
+                            )
+                            .await
+                            .map(|_| ())
+                            .map_err(map_err)?;
+                        } else {
+                            acp_send(
+                                acp::SetSessionModelRequest::new(
+                                    session_id.clone(),
+                                    model_id.clone(),
+                                ),
+                                &tx,
+                            )
+                            .await
+                            .map(|_| ())
+                            .map_err(map_err)?;
+                        }
+                        if let (Some(eff), Some(config_id)) = (effort, thought_config_id) {
+                            acp_send(
+                                acp::SetSessionConfigOptionRequest::new(
+                                    session_id,
+                                    config_id,
+                                    eff.as_str(),
+                                ),
+                                &tx,
+                            )
+                            .await
+                            .map(|_| ())
+                            .map_err(map_err)?;
+                        }
+                        Ok(())
+                    }
+                    .await;
                     TaskResult::SwitchModelComplete {
                         agent_id,
                         model_id,

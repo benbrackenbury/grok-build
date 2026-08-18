@@ -22,6 +22,16 @@ const SESSION_RPC_SLACK: std::time::Duration = std::time::Duration::from_secs(50
 pub(super) fn session_rpc_timeout() -> std::time::Duration {
     SESSION_RPC_FLOOR.max(xai_grok_workspace::envrc::loader_budget() + SESSION_RPC_SLACK)
 }
+/// Stamp Cursor thought-level menus onto the session model catalog so
+/// `/effort` works. No-op for the in-process Grok backend.
+pub(super) async fn enrich_session_models(
+    tx: &AcpAgentTx,
+    models: Option<acp::SessionModelState>,
+    config_options: Option<Vec<acp::SessionConfigOption>>,
+) -> Option<acp::SessionModelState> {
+    crate::acp::cursor_effort::enrich_session_models(tx, models, config_options).await
+}
+
 /// `acp_send` bounded by [`session_rpc_timeout`]; on expiry, an error naming
 /// `action` instead of an eternal spinner.
 pub(super) async fn acp_send_bounded<R, T>(

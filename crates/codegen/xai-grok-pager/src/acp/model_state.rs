@@ -7,6 +7,7 @@ use xai_grok_shell::sampling::types::{
     parse_reasoning_efforts_meta, supports_reasoning_effort_meta,
 };
 
+use crate::acp::cursor_effort::THOUGHT_LEVEL_CONFIG_ID_META_KEY;
 use crate::slash::commands::effort_levels::legacy_effort_options;
 
 /// Why an effort token could not be applied to a model. Shared by every effort
@@ -164,6 +165,19 @@ impl ModelState {
             Some(id) => self.reasoning_effort_options_for(id),
             None => Vec::new(),
         }
+    }
+
+    /// Cursor `thought_level` config option id for this model (or the
+    /// session's last-seen effort selector). Used to apply `/effort` via
+    /// `session/set_config_option` instead of Grok `_meta.reasoningEffort`.
+    pub fn thought_level_config_id_for(&self, id: &acp::ModelId) -> Option<String> {
+        self.available
+            .get(id)
+            .and_then(|info| info.meta.as_ref())
+            .and_then(|meta| meta.get(THOUGHT_LEVEL_CONFIG_ID_META_KEY))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .or_else(crate::acp::cursor_effort::thought_level_config_id)
     }
 
     /// Menu for a specific catalog model id (used by `/model`'s effort phase).
